@@ -50,6 +50,20 @@ BLOCK_SIZE = 2**14
 COUNT_AT_A_TIME = 2**10
 TIMEOUT = 30
 
+general_flow = """
+
+Here is my idea for the general flow of the program:
+
+- Over the TCP socket, the client sends an OpenRequest to the server.
+- The server replies with an OpenReply.
+- The client sends a SendFileRequest for each file it wants to send.
+- The client then sends files over the UDP sockets.
+- The server receives the files and sends back a SendFileReply
+- If a packet was missed, the server sends back a ResendPacketsReply
+- Connection is implicitly over once the last file is sent
+
+"""
+
 # request types
 
 class WireRepr(ABC):
@@ -263,19 +277,6 @@ class ResendPacketsReply(WireRepr):
             wire['packets']
         )
 
-general_flow = """
-
-Here is my idea for the general flow of the program:
-
-- Over the TCP socket, the client sends an OpenRequest to the server.
-- The server replies with an OpenReply.
-- The client sends a SendFileRequest for each file it wants to send.
-- The client then sends files over the UDP sockets.
-- The server receives the files and sends back a SendFileReply
-- If a packet was missed, the server sends back a ResendPacketsReply
-- Connection is implicitly over once the last file is sent
-
-"""
 
 # file packet
 class FilePacketHeader:
