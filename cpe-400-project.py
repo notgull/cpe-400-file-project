@@ -3,6 +3,37 @@
 # Course Project
 # Arslan
 
+"""
+This application is the both a client and server for the CPE 400 course project, where we
+implement an application that sends a folder's worth of files over the network to the server.
+
+Two types of ports are opened:
+
+- The directive port (only one), which is used to send instructions to the server and receive replies
+  to those instructions.
+- The data ports (several), which are used to send files to the server.
+
+Things that need to happen:
+- Client sends server the files that need to be sent.
+- Server sends client the ports that the client uses.
+- Client indicates that it is sending a file, alongside the file's name and size, and the data port that
+  it is using.
+- Once the client has sent all of the packets (of size BLOCK_SIZE) over the data port, it sends a "file done"
+  message to the server.
+- In response, the server sends one of the following:
+  - An "all is well" message, indicating that the file was received successfully.
+  - A request for some packets that were not received earlier. In response, the client sends more packets,
+    and sends another "file done" message, rinse and repeat.
+- Connection is implicitly closed when the server has confirmed reception of all files.
+
+General Guide to this file:
+
+- Directives are sent by first converting them into a map, then converting them to JSON. They are sent over
+  the directive port as text. All directives and replies derive the WireRepr class.
+- Files are converted into FilePackets to be used used in FilePacketSender/FilePacketReceiver.
+- The BufferedSocket is used to send/read WireRepr types.
+"""
+
 from abc import ABC, abstractmethod, abstractclassmethod
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar
 
@@ -584,3 +615,10 @@ class Client:
     """
 
     files: Mapping[str, FileInfo]
+
+def main():
+    # TODO
+    pass
+
+if __name__ == "__main__":
+    main()
