@@ -38,16 +38,20 @@ from abc import ABC, abstractmethod, abstractclassmethod
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar
 
 import array
+import hashlib
 import json
+import os
 import random
 import select
 import socket
 import struct
+import sys
 
 # constants
 
 BLOCK_SIZE = 2**14
 COUNT_AT_A_TIME = 2**10
+DEFAULT_PORT = 27850
 TIMEOUT = 30
 
 general_flow = """
@@ -63,6 +67,33 @@ Here is my idea for the general flow of the program:
 - Connection is implicitly over once the last file is sent
 
 """
+
+# argument parsing
+
+def find_argument(arg: str) -> Optional[str]:
+    """
+    Gets the value of an argument from the command line.
+    """
+
+    for i in range(1, len(sys.argv)):
+        if sys.argv[i] == arg:
+            if i + 1 < len(sys.argv):
+                return sys.argv[i + 1]
+            else:
+                return None
+    return None
+
+T = TypeVar("T")
+
+def unwrap_or(val: Optional[T], default: T) -> T:
+    """
+    Take an optional value and return it, or return a default value.
+    """
+
+    if val is None:
+        return default
+    else:
+        return val
 
 # request types
 
@@ -99,9 +130,9 @@ class OpenRequest(WireRepr):
 
     filenames: Sequence[str]
     num_concurrent: int
-    checksums: Mapping[str, Sequence[int]]
+    checksums: Mapping[str, bytes]
 
-    def __init__(self, filenames: Sequence[str], num_concurrent: int, checksums: Mapping[str, Sequence[int]]) -> None:
+    def __init__(self, filenames: Sequence[str], num_concurrent: int, checksums: Mapping[str, bytes]) -> None:
         self.filenames = filenames
         self.num_concurrent = num_concurrent
         self.checksums = checksums
@@ -542,6 +573,13 @@ class FilePacketSender:
         # send the packet
         self.sock.sendto(packet.to_bytes(), (self.host, self.port))
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self):
+        self.file_reader.close()
+        self.sock.close()
+
 class FilePacketReader:
     """
     A wrapper around a UDP socket that reads in packets and writes them
@@ -602,13 +640,27 @@ class FilePacketReader:
             # write the packet to the file
             self.write_packet(packet)
 
+# checksum
+def get_checksum(data: bytes) -> bytes:
+    return hashlib.sha256(data).digest()
+
 # client operations
 
 class FileInfo:
     """
     Information about a file
     """
-    pass
+    
+    filename: str
+    checksum: bytes
+    size: int
+
+    def __init__(self, filename: str, checksum: bytes) -> None:
+        self.filename = filename
+        self.checksum = checksum
+        
+        # calculate file size in bytes
+        self.size = os.path.getsize(self.filename)
 
 class Client:
     """
@@ -616,10 +668,104 @@ class Client:
     """
 
     files: Mapping[str, FileInfo]
+    folder: str
+    sock: BufferedSocket
+    num_concurrent: int
+    ports: Sequence[int]
+
+    current_ports: Mapping[str, int]
+
+    def __init__(self):
+        self.files = {}
+        self.current_ports = {}
+
+    def run(self):
+        # read in all files (recursively) from the folder specified in the second
+        # argument
+        folder = sys.argv[2]
+        self.folder = folder
+        
+        for root, dirs, files in os.walk(folder):
+            for filename in files:
+                # get the checksums for the file
+                with open(os.path.join(root, filename), 'rb') as f:
+                    checksum = get_checksum(f.read())
+
+                # add the file to the list of files
+                self.files[filename] = FileInfo(filename, checksum)
+
+        # create the socket
+        hostname = sys.argv[3]
+        port = unwrap_or(find_argument("--port"), DEFAULT_PORT)
+
+        # start up a TCP socket connected to the given hostname and port
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((hostname, port))
+        self.sock = BufferedSocket(sock)
+
+        # send the Open request to indicate that we're open for business
+        num_concurrent = 16
+        filenames = [info.filename for info in self.files.values()]
+        checksums = {info.filename: info.checksum for info in self.files.values()}
+
+        self.sock.send_wiretype(OpenRequest(filenames, num_concurrent, checksums))
+
+        # wait for an Open reply in response
+        open_reply = self.sock.recv_wiretype(OpenReply)
+
+        self.num_concurrent = open_reply.num_concurrent
+        self.ports = open_reply.ports
+
+        # begin sending files
+        # TODO: parallelize
+        for file in self.files.values():
+            # choose a port that is not currently in use
+            for port in self.ports:
+                if port in self.current_ports.values():
+                    continue
+                self.current_ports[file.filename] = port 
+                break
+
+            current_port = self.current_ports[file.filename]
+
+            self.sock.send_wiretype(SendFileRequest(
+                file.filename,
+                file.size,
+                current_port
+            ))
+
+            # open a UDP socket to send files over
+            file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            with FilePacketSender(file_sock, open(file.filename, "rb"), hostname, current_port) as sender:
+                sender.send()
+
+            # TODO : receive response from server and interpret it
+
+
+class Server:
+    """
+    The server state for the file transfer mechanism.
+    """
+
+    files: Mapping[str, FileInfo]
+
+    def __init__(self):
+        self.files = {}
+
+    def run(self):
+        pass
 
 def main():
-    # TODO
-    pass
+    mode = sys.argv[1]
+    if mode == "client":
+        client = Client()
+        client.run()
+    elif mode == "server":
+        server = Server()
+        server.run()
+    else:
+        print("Invalid mode: {}".format(mode))
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
