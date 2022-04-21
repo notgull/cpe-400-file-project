@@ -35,6 +35,7 @@ General Guide to this file:
 """
 
 from abc import ABC, abstractmethod, abstractclassmethod
+from pathlib import Path
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar
 
 import array
@@ -52,6 +53,7 @@ import sys
 BLOCK_SIZE = 2**14
 COUNT_AT_A_TIME = 2**10
 DEFAULT_PORT = 27850
+DEFAULT_FILE_PORT = 27851
 TIMEOUT = 30
 
 general_flow = """
@@ -232,14 +234,17 @@ class FinishedFileRequest(WireRepr):
     """
 
     filename: str
+    last_sequence: int
 
-    def __init__(self, filename: str) -> None:
+    def __init__(self, filename: str, last_sequence: int) -> None:
         self.filename = filename
+        self.last_sequence = last_sequence
 
     def to_wire(self) -> Mapping[str, Any]:
         return {
             'type': 'finished_send_file',
-            'filename': self.filename
+            'filename': self.filename,
+            'last_sequence': self.last_sequence
         }
 
     @classmethod
@@ -248,7 +253,8 @@ class FinishedFileRequest(WireRepr):
             raise ValueError('Expected finished_send_file, got {}'.format(wire['type']))
 
         return cls(
-            wire['filename']
+            wire['filename'],
+            wire['last_sequence']
         )
 
 class SendFileReply(WireRepr):
@@ -326,7 +332,7 @@ class FilePacketHeader:
         self.size = size
 
     def to_bytes(self) -> bytes:
-        return struct.pack('<II', self.seq_num, self.size)
+       return struct.pack('<II', self.seq_num, self.size)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> 'FilePacketHeader':
@@ -508,6 +514,7 @@ class FilePacketSender:
 
     sock: socket.socket
     seq_num: int
+    used_seq_num: int
     file_reader: BinaryIO
     host: str
     port: int
@@ -515,15 +522,17 @@ class FilePacketSender:
     def __init__(self, sock: socket.socket, file_reader: BinaryIO, host: str, port: int) -> None:
         self.sock = sock
         self.seq_num = 0
+        self.used_seq_num = 0
         self.file_reader = file_reader
         self.host = host
         self.port = port
 
-    def send(self, sequences: Optional[Container[int]]) -> None:
+    def send(self, sequences: Optional[Container[int]]) -> int:
         """
         Send this file across the UDP socket.
 
         If `sequences` is not `None`, only send those specific sequence numbers.
+        Returns the last sequence number we sent.
         """
 
         # keep sending packets until we've sent all the data
@@ -533,15 +542,16 @@ class FilePacketSender:
 
             # if we've reached the end of the file, we're done
             if packet is None:
-                # reset sequence number and reutrn
+                # reset sequence number and reutrn 
                 self.seq_num = 0
-                return
+                return self.used_seq_num
 
             # check the sequence number
             if sequences is not None and packet.header.seq_num not in sequences:
                 continue
 
             # send the packet
+            self.used_seq_num = self.seq_num
             self.send_packet(packet)
 
     def read_packet(self) -> Optional[FilePacket]:
@@ -734,13 +744,49 @@ class Client:
                 current_port
             ))
 
+            sequences = None
+
             # open a UDP socket to send files over
-            file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            with FilePacketSender(file_sock, open(file.filename, "rb"), hostname, current_port) as sender:
-                sender.send()
+            while True:
+                file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                with FilePacketSender(file_sock, open(file.filename, "rb"), hostname, current_port) as sender:
+                    last_seq = sender.send()
 
-            # TODO : receive response from server and interpret it
+                # indicate that we've sent the file
+                self.sock.send_wiretype(
+                    FinishedFileRequest(file.filename, last_seq)
+                )
 
+                # wait for the response from the server
+                response = self.sock.recv_many_wiretype(
+                    SendFileReply, ResendPacketsReply
+                )
+
+                # if we received a SendFileReply, we're done
+                if isinstance(response, SendFileReply):
+                    break
+                else:
+                    sequences = response.packets
+
+        # connection is now implicitly closed
+
+# server operations
+
+class ServerFileInfo:
+    """
+    Information about a file
+    """
+
+    filename: str
+    checksum: bytes
+    size: Optional[int]
+
+    def __init__(self, filename: str, checksum: bytes) -> None:
+        self.filename = filename
+        self.checksum = checksum
+        
+        # calculate file size in bytes
+        self.size = None 
 
 class Server:
     """
@@ -748,12 +794,79 @@ class Server:
     """
 
     files: Mapping[str, FileInfo]
+    working_ports: Sequence[int]
+    file_root: Path
 
     def __init__(self):
         self.files = {}
+        self.working_ports = []
+        self.file_root = Path(sys.argv[2])
 
     def run(self):
-        pass
+        # open a listener on the default port
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('', unwrap_or(find_argument("--port"), DEFAULT_PORT)))
+
+        # wait for a connection
+        listener.listen(1)
+        sock, addr = listener.accept()
+        sock = BufferedSocket(sock)
+
+        # wait for an Open request that contains information
+        # about the files we're going to receive
+        open_request = sock.recv_wiretype(OpenRequest)
+
+        # register the file info
+        for filename in open_request.filenames:
+            checksum = open_request.checksums[filename]
+            self.files[filename] = ServerFileInfo(filename, checksum)
+
+        # decide how many working ports we want
+        self.working_ports = list(range(DEFAULT_FILE_PORT, DEFAULT_FILE_PORT + open_request.num_concurrent))
+
+        # send an Open reply with this information
+        sock.send_wiretype(OpenReply(self.working_ports, open_request.num_concurrent))
+
+        # wait for a SendFileRequest
+        while len(self.files) > 0:
+            # wait for the send file request
+            send_file_request = sock.recv_wiretype(SendFileRequest)
+
+            # this indicates the size of the file, as well as the server port
+            # it's being sent over
+            fileinfo = self.files[send_file_request.filename]
+            filesize = send_file_request.filesize
+
+            while True:
+                # begin receiving files over the designated port
+                # open a UDP listening socket
+                file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                file_sock.bind(('', send_file_request.port))
+                f = open(os.path.join(self.file_root, fileinfo.filename), "wb")
+                with FilePacketReader(file_sock, f, filesize) as receiver:
+                    # receive the file
+                    received_sequences = list(receiver.read())
+
+                # wait for the FinishedFileRequest
+                finished_file_request = sock.recv_wiretype(FinishedFileRequest)
+
+                # if we've received every sequence number up to the one indicated
+                # in the request, we're done
+                full_packets = list(range(finished_file_request.last_seq + 1))
+                if received_sequences == full_packets:
+                    # remove the filename from self.files
+                    del self.files[send_file_request.filename]
+                    sock.send_wiretype(
+                        SendFileReply(filename)
+                    )
+                    break
+                else:
+                    # we missed a packet
+                    # ask to resend the missed packets
+                    diff_packets = list(set(full_packets) - set(received_sequences))
+                    sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
+
+        # connection is now implicitly closed
 
 def main():
     mode = sys.argv[1]
