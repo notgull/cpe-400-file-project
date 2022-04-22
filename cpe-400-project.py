@@ -35,6 +35,7 @@ General Guide to this file:
 """
 
 from abc import ABC, abstractmethod, abstractclassmethod
+import multiprocessing
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar
 
@@ -728,7 +729,16 @@ class Client:
 
         # begin sending files
         # TODO: parallelize
-        for file in self.files.values():
+
+        # create pool object with given number of processes 
+        pool_obj = multiprocessing.Pool(processes = self.num_concurrent)
+
+        # submits individual elements of the iterable "self.files.values()" 
+        # as tasks to be processed by the pool
+        pool_obj.map(send_file, self.files.values())
+
+        # process to handle a single iterable at a time 
+        def send_file(file):
             # choose a port that is not currently in use
             for port in self.ports:
                 if port in self.current_ports.values():
@@ -767,6 +777,46 @@ class Client:
                     break
                 else:
                     sequences = response.packets
+
+"""         for file in self.files.values():
+            # choose a port that is not currently in use
+            for port in self.ports:
+                if port in self.current_ports.values():
+                    continue
+                self.current_ports[file.filename] = port 
+                break
+
+            current_port = self.current_ports[file.filename]
+
+            self.sock.send_wiretype(SendFileRequest(
+                file.filename,
+                file.size,
+                current_port
+            ))
+
+            sequences = None
+
+            # open a UDP socket to send files over
+            while True:
+                file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                with FilePacketSender(file_sock, open(file.filename, "rb"), hostname, current_port) as sender:
+                    last_seq = sender.send()
+
+                # indicate that we've sent the file
+                self.sock.send_wiretype(
+                    FinishedFileRequest(file.filename, last_seq)
+                )
+
+                # wait for the response from the server
+                response = self.sock.recv_many_wiretype(
+                    SendFileReply, ResendPacketsReply
+                )
+
+                # if we received a SendFileReply, we're done
+                if isinstance(response, SendFileReply):
+                    break
+                else:
+                    sequences = response.packets """
 
         # connection is now implicitly closed
 
