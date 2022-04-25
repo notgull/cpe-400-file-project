@@ -48,6 +48,9 @@ import select
 import socket
 import struct
 import sys
+import tempfile
+
+from more_itertools import bucket
 
 # constants
 
@@ -344,6 +347,12 @@ class FilePacketHeader:
     def size(cls) -> int:
         return struct.calcsize('<II')
 
+    def __repr__(self) -> str:
+        return 'FilePacketHeader(seq_num={}, size={})'.format(self.seq_num, self.size)
+    
+    def __str__(self) -> str:
+        return repr(self)
+
 class FilePacket:
     """
     The total file packet. 
@@ -363,7 +372,23 @@ class FilePacket:
     def from_bytes(cls, data: bytes) -> 'FilePacket':
         header = FilePacketHeader.from_bytes(data[:8])
         data = data[8:]
+
+        # restrict to the size given in the header
+        data = data[:header.size]
+
         return cls(header, data)
+
+    def __repr__(self) -> str:
+        builder = f"== seq: {self.header.seq_num} == size: {self.header.size} ==\n"
+        for i, byte in enumerate(self.data):
+            builder += f'{byte:02x} '
+            if (i + 1) % 16 == 0:
+                builder += '\n'
+
+        return builder
+  
+    def __str__(self) -> str:
+        return repr(self)
 
 # socket functions
 
@@ -462,6 +487,26 @@ class BufferedSocket:
             except:
                 pass
 
+    def close(self) -> None:
+        """
+        Close the socket.
+        """
+
+        self.sock.close()
+
+def test_buffered_socket():
+    # create a pair of sockets
+    sock1, sock2 = socket.socketpair()
+
+    # wrap them both in BufferedSocket
+    sock1 = BufferedSocket(sock1)
+    sock2 = BufferedSocket(sock2)
+
+    # send some basic data over one and watch it be received in the other
+    msg = b'Hello, world!'
+    sock1.send_data(msg)
+    assert sock2.recv_data() == msg 
+
 class FilePacketSender:
     """
     A wrapper around a (UDP) socket that sends file packets as
@@ -472,10 +517,16 @@ class FilePacketSender:
     seq_num: int
     used_seq_num: int
     file_reader: BinaryIO
-    host: str
-    port: int
+    host: Optional[str]
+    port: Optional[int]
 
-    def __init__(self, sock: socket.socket, file_reader: BinaryIO, host: str, port: int) -> None:
+    def __init__(
+        self, 
+        sock: socket.socket, 
+        file_reader: BinaryIO, 
+        host: Optional[str], 
+        port: Optional[int]
+    ) -> None:
         self.sock = sock
         self.seq_num = 0
         self.used_seq_num = 0
@@ -500,7 +551,7 @@ class FilePacketSender:
             if packet is None:
                 # reset sequence number and reutrn 
                 self.seq_num = 0
-                return self.used_seq_num
+                break 
 
             # check the sequence number
             if sequences is not None and packet.header.seq_num not in sequences:
@@ -508,7 +559,15 @@ class FilePacketSender:
 
             # send the packet
             self.used_seq_num = self.seq_num
+            #print(f"sending:\n{packet}")
             self.send_packet(packet)
+
+        # send a zero-size packet at the very end
+        zsp = FilePacket(FilePacketHeader(self.seq_num + 1, 0), b'\x00' * BLOCK_SIZE)
+        #print(f"sending:\n{zsp}")
+        self.send_packet(zsp)
+
+        return self.used_seq_num
 
     def read_packet(self) -> Optional[FilePacket]:
         """
@@ -523,8 +582,13 @@ class FilePacketSender:
         if len(data) == 0:
             return None
 
+        block_size = len(data)
+
+        # pad it out to the block size
+        data += b'\x00' * (BLOCK_SIZE - block_size)
+
         # create the packet
-        packet = FilePacket(FilePacketHeader(self.seq_num, len(data)), data)
+        packet = FilePacket(FilePacketHeader(self.seq_num, block_size), data)
 
         # increment the sequence number
         self.seq_num += 1
@@ -537,7 +601,14 @@ class FilePacketSender:
         """
 
         # send the packet
-        self.sock.sendto(packet.to_bytes(), (self.host, self.port))
+        if self.host is not None and self.port is not None:
+            # repeatedly call sendto until all bytes are sent
+            buf = packet.to_bytes()
+            while len(buf) > 0:
+                by = self.sock.sendto(buf, (self.host, self.port))
+                buf = buf[by:]
+        else:
+            self.sock.sendall(packet.to_bytes())
 
     def __enter__(self):
         return self
@@ -564,10 +635,18 @@ class FilePacketReader:
         Read a packet from the socket.
         """
         # receive the packet
-        data, addr = self.sock.recvfrom(BLOCK_SIZE + FilePacketHeader.size())
+        data = b''
+        while len(data) != BLOCK_SIZE + FilePacketHeader.size():
+            data += self.sock.recv(BLOCK_SIZE + FilePacketHeader.size() - len(data))
 
         # parse the packet
         packet = FilePacket.from_bytes(data)
+
+        #print(f"recv:\n{packet}")
+
+        # if the packet's size is 0, we're done
+        if packet.header.size == 0:
+            return None
 
         # write the packet to the file
         self.file_writer.write(packet.data)
@@ -605,6 +684,34 @@ class FilePacketReader:
 
             # write the packet to the file
             self.write_packet(packet)
+
+def test_file_packet():
+    # create a pair of sockets
+    sock1, sock2 = socket.socketpair()
+
+    # create a temporary file with dummy data
+    with tempfile.NamedTemporaryFile() as f:
+        # write some data to the file
+        f.write(b'Hello, world!')
+        f.seek(0)
+
+        # wrap the sockets in FilePacketSender and FilePacketReader
+        sender = FilePacketSender(sock1, f, None, None)
+        with tempfile.NamedTemporaryFile() as f2:
+            reader = FilePacketReader(sock2, f2)
+
+            # send the file across the sockets
+            sender.send(None)
+            for seq in reader.read():
+                pass
+
+            f.seek(0)
+            f2.seek(0)
+
+            # check that the file is correct
+            l = f.read()
+            r = f2.read()
+            assert l == r
 
 # checksum
 def get_checksum(data: bytes) -> bytes:
@@ -645,19 +752,17 @@ class Client:
 
     current_ports: Mapping[str, int]
 
-    def __init__(self):
+    def __init__(self, folder: str):
         self.files = {}
         self.responses = {}
         self.current_ports = {}
         self.running = True
+        self.folder = folder
 
     def run(self):
         # read in all files (recursively) from the folder specified in the second
-        # argument
-        folder = sys.argv[2]
-        self.folder = folder
-        
-        for root, dirs, files in os.walk(folder):
+        # argument        
+        for root, dirs, files in os.walk(self.folder):
             for filename in files:
                 # get the checksums for the file
                 with open(os.path.join(root, filename), 'rb') as f:
@@ -799,10 +904,10 @@ class Server:
     working_ports: Sequence[int]
     file_root: Path
 
-    def __init__(self):
+    def __init__(self, file_root: Path):
         self.files = {}
         self.working_ports = []
-        self.file_root = Path(sys.argv[2])
+        self.file_root = file_root
 
     def run(self):
         # open a listener on the default port
@@ -906,14 +1011,16 @@ class Test:
 def main():
     mode = sys.argv[1]
     if mode == "client":
-        client = Client()
+        client = Client(sys.argv[2])
         client.run()
     elif mode == "server":
-        server = Server()
+        server = Server(Path(sys.argv[2]))
         server.run()
     elif mode == "test":
-        test = Test(Client(), Server())
-        test.run()
+        test_buffered_socket()
+        test_file_packet()
+        #test = Test(Client(), Server())
+        #test.run()
     else:
         print("Invalid mode: {}".format(mode))
         sys.exit(1)
