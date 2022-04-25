@@ -37,7 +37,7 @@ General Guide to this file:
 from abc import ABC, abstractmethod, abstractclassmethod
 import multiprocessing
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar
+from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar, Union
 
 import array
 import hashlib
@@ -375,104 +375,59 @@ class BufferedSocket:
     """
 
     sock: socket.socket
-    buf: bytes
-    count_at_a_time: int
 
     def __init__(self, sock: socket.socket) -> None:
         self.sock = sock
-        self.buf = b''
-        self.count_at_a_time = COUNT_AT_A_TIME
-
-        # set our socket to be nonblocking
-        self.sock.setblocking(False)
 
     def send_data(self, data: bytes) -> None:
         """
         Send data to the socket.
         """
 
-        # send as much as we can until we get a BlockingIOError,
-        # then use select.select() to poll until it's ready again
-        while True:
-            try:
-                bytes_sent = self.sock.send(data)
-                
-                # remove bytes_sent bytes from the start of data
-                data = data[bytes_sent:]
+        # send the amount of data, in a u32 byte format,
+        # followed by the data itself
+        buf = struct.pack('<I', len(data))
+        self.sock.sendall(buf + data)
 
-                # if we've sent all the data, we're done
-                if len(data) == 0:
-                    return
-            except BlockingIOError:
-                pass
-
-            # wait for the socket to be ready
-            ready = select.select([], [self.sock], [], TIMEOUT)
-            if not ready[1]:
-                raise TimeoutError('Socket not ready')
-
-    def recv_data_until(self, until: Callable[[bytes], Optional[Tuple[int, int]]]) -> bytes:
+    def __recvall(self, bufsize: int) -> bytes:
         """
-        Receive bytes into our buffer until the callback is able to extract a specific
-        set of bytes.
+        Receive all data from the socket until it fills the buffer.
         """
 
-        # keep receiving until we get the bytes we want
-        while True:
-            # receive some data
-            try:
-                data = self.sock.recv(self.count_at_a_time)
-            except BlockingIOError:
-                data = b''
+        data = b''
+        while len(data) < bufsize:
+            total = self.sock.recv(bufsize - len(data))
+            if not total:
+                raise ConnectionResetError('Connection closed')
+            data += total
+        return data
 
-            # if we received no data, the socket is closed
-            if len(data) == 0:
-                raise ConnectionResetError('Socket closed')
+    def recv_data(self) -> bytes:
+        """
+        Receive data.
+        """
 
-            # add the data to our buffer
-            self.buf += data
+        # receive the amount of data, in a u32 byte format
+        buf = self.__recvall(4)
+        if len(buf) == 0:
+            raise ConnectionResetError('Connection closed')
+        elif len(buf) != 4:
+            raise ConnectionError('Connection error')
+        
+        # unpack the amount of data
+        size = struct.unpack('<I', buf)[0]
 
-            # try to extract the bytes we want
-            extracted = until(self.buf)
-            if extracted is not None:
-                # remove the bytes we extracted from the buffer
-                self.buf = self.buf[extracted[1]:]
-                return self.buf[:extracted[0]]
-
-            # wait for the socket to be ready
-            ready = select.select([self.sock], [], [], TIMEOUT)
-            if not ready[0]:
-                raise TimeoutError('Socket not ready')
+        # receive the data
+        buf = self.__recvall(size)
+        return buf
 
     def recv_json(self) -> Mapping[str, Any]:
         """
         Receive a JSON object from the socket.
         """
 
-        def decoder(packet: bytes) -> Optional[Tuple[int, int]]:
-            """
-            Count the opening and closing braces until we reach the final
-            closing brace
-            """
-
-            # count the opening and closing braces
-            opening_braces = 0
-            closing_braces = 0
-            for i, byte in enumerate(packet):
-                if byte == b'{':
-                    opening_braces += 1
-                elif byte == b'}':
-                    closing_braces += 1
-
-                # if we've reached the final closing brace, we're done
-                if opening_braces == closing_braces and opening_braces != 0:
-                    return (0, i)
-
-            # we didn't reach the final closing brace
-            return None
-
         # receive the JSON object
-        data = self.recv_data_until(decoder)
+        data = self.recv_data()
 
         # return the JSON object
         return json.loads(data.decode('utf-8'))
@@ -509,7 +464,7 @@ class BufferedSocket:
 
 class FilePacketSender:
     """
-    A wrapper around a (UDP?) socket that sends file packets as
+    A wrapper around a (UDP) socket that sends file packets as
     datagrams.
     """
 
@@ -673,22 +628,28 @@ class FileInfo:
         # calculate file size in bytes
         self.size = os.path.getsize(self.filename)
 
+FileRecvResponse = Union[SendFileReply, ResendPacketsReply]
+
 class Client:
     """
     The client state for the file transfer mechanism.
     """
 
     files: Mapping[str, FileInfo]
+    responses: Mapping[str, FileRecvResponse]
     folder: str
     sock: BufferedSocket
     num_concurrent: int
+    running: bool
     ports: Sequence[int]
 
     current_ports: Mapping[str, int]
 
     def __init__(self):
         self.files = {}
+        self.responses = {}
         self.current_ports = {}
+        self.running = True
 
     def run(self):
         # read in all files (recursively) from the folder specified in the second
@@ -728,14 +689,31 @@ class Client:
         self.ports = open_reply.ports
 
         # begin sending files
-        # TODO: parallelize
 
-        # create pool object with given number of processes 
+        # create pool object with given number of processes
         pool_obj = multiprocessing.Pool(processes = self.num_concurrent)
+
+        # start the thread in the multiprocessing pool
+        logger = pool_obj.apply_async(log_responses)
 
         # submits individual elements of the iterable "self.files.values()" 
         # as tasks to be processed by the pool
-        pool_obj.map(send_file, self.files.values())
+        pool_obj.map(send_file, list(self.files.values()))
+
+        # we're done
+        self.running = False
+
+        # create a thread that just sits on the socket and logs its responses
+        # into the responses map
+        def log_responses():
+            while self.running:
+                # receive the next packet
+                response = self.sock.recv_many_wiretype(
+                    SendFileReply, ResendPacketsReply
+                )
+
+                # add the response to the map
+                self.responses[response.filename] = response
 
         # process to handle a single iterable at a time 
         def send_file(file):
@@ -768,12 +746,26 @@ class Client:
                 )
 
                 # wait for the response from the server
-                response = self.sock.recv_many_wiretype(
-                    SendFileReply, ResendPacketsReply
-                )
+                while True:
+                    
+
+                    # is this our filename's response?
+                    if response.filename == file.filename:
+                        pass
+                    else:
+                        # if not, store it in the responses map, and check
+                        # to see if another thread got our response
+                        self.responses[response.filename] = response
+                        if file.filename in self.responses:
+                            response = self.responses[file.filename]
+                            del self.responses[file.filename]
+                            break
+                        else:
+                            continue
 
                 # if we received a SendFileReply, we're done
                 if isinstance(response, SendFileReply):
+                    del self.current_ports[file.filename]
                     break
                 else:
                     sequences = response.packets
@@ -840,6 +832,7 @@ class Server:
         # wait for a SendFileRequest
         while len(self.files) > 0:
             # wait for the send file request
+            # TODO: parallelize this
             send_file_request = sock.recv_wiretype(SendFileRequest)
 
             # this indicates the size of the file, as well as the server port
@@ -852,7 +845,8 @@ class Server:
                 # open a UDP listening socket
                 file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 file_sock.bind(('', send_file_request.port))
-                f = open(os.path.join(self.file_root, fileinfo.filename), "wb")
+                path = os.path.join(self.file_root, fileinfo.filename)
+                f = open(path, "wb")
                 with FilePacketReader(file_sock, f, filesize) as receiver:
                     # receive the file
                     received_sequences = list(receiver.read())
@@ -862,8 +856,16 @@ class Server:
 
                 # if we've received every sequence number up to the one indicated
                 # in the request, we're done
+                # TODO: this algorithm is broken, please fix
                 full_packets = list(range(finished_file_request.last_seq + 1))
                 if received_sequences == full_packets:
+                    # make sure that the file matches the checksum
+                    with open(path, "rb") as f:
+                        checksum = get_checksum(f.read())
+                        if checksum != fileinfo.checksum:
+                            # ask to resend all packets
+                            sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
+
                     # remove the filename from self.files
                     del self.files[send_file_request.filename]
                     sock.send_wiretype(
