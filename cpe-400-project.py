@@ -35,7 +35,7 @@ General Guide to this file:
 """
 
 from abc import ABC, abstractmethod, abstractclassmethod
-import multiprocessing
+from concurrent import futures
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar, Union
 
@@ -691,17 +691,17 @@ class Client:
         # begin sending files
 
         # create pool object with given number of processes
-        pool_obj = multiprocessing.Pool(processes = self.num_concurrent)
+        pool_obj = futures.ThreadPoolExecutor(max_workers=self.num_concurrent) 
 
         # start the thread in the multiprocessing pool
-        logger = pool_obj.apply_async(log_responses)
+        logger = pool_obj.submit(log_responses)
 
         # submits individual elements of the iterable "self.files.values()" 
         # as tasks to be processed by the pool
-        pool_obj.map(send_file, list(self.files.values()))
+        futures.wait(pool_obj.map(send_file, list(self.files.values())))
 
         # we're done
-        self.running = False
+        logger.cancel()
 
         # create a thread that just sits on the socket and logs its responses
         # into the responses map
@@ -829,56 +829,79 @@ class Server:
         # send an Open reply with this information
         sock.send_wiretype(OpenReply(self.working_ports, open_request.num_concurrent))
 
+        # open an executor, for concurrency
+        pool = futures.ThreadPoolExecutor(max_workers=open_request.num_concurrent)
+
         # wait for a SendFileRequest
         while len(self.files) > 0:
             # wait for the send file request
             # TODO: parallelize this
             send_file_request = sock.recv_wiretype(SendFileRequest)
 
-            # this indicates the size of the file, as well as the server port
-            # it's being sent over
-            fileinfo = self.files[send_file_request.filename]
-            filesize = send_file_request.filesize
+            # spawn a new thread
+            pool.submit(recv_file, send_file_request)
 
-            while True:
-                # begin receiving files over the designated port
-                # open a UDP listening socket
-                file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                file_sock.bind(('', send_file_request.port))
-                path = os.path.join(self.file_root, fileinfo.filename)
-                f = open(path, "wb")
-                with FilePacketReader(file_sock, f, filesize) as receiver:
-                    # receive the file
-                    received_sequences = list(receiver.read())
+            def recv_file(sfe: SendFileRequest):
+                # this indicates the size of the file, as well as the server port
+                # it's being sent over
+                fileinfo = self.files[send_file_request.filename]
+                filesize = send_file_request.filesize
 
-                # wait for the FinishedFileRequest
-                finished_file_request = sock.recv_wiretype(FinishedFileRequest)
+                while True:
+                    # begin receiving files over the designated port
+                    # open a UDP listening socket
+                    file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    file_sock.bind(('', send_file_request.port))
+                    path = os.path.join(self.file_root, fileinfo.filename)
+                    f = open(path, "wb")
+                    with FilePacketReader(file_sock, f, filesize) as receiver:
+                        # receive the file
+                        received_sequences = list(receiver.read())
 
-                # if we've received every sequence number up to the one indicated
-                # in the request, we're done
-                # TODO: this algorithm is broken, please fix
-                full_packets = list(range(finished_file_request.last_seq + 1))
-                if received_sequences == full_packets:
-                    # make sure that the file matches the checksum
-                    with open(path, "rb") as f:
-                        checksum = get_checksum(f.read())
-                        if checksum != fileinfo.checksum:
-                            # ask to resend all packets
-                            sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
+                    # wait for the FinishedFileRequest
+                    finished_file_request = sock.recv_wiretype(FinishedFileRequest)
 
-                    # remove the filename from self.files
-                    del self.files[send_file_request.filename]
-                    sock.send_wiretype(
-                        SendFileReply(filename)
-                    )
-                    break
-                else:
-                    # we missed a packet
-                    # ask to resend the missed packets
-                    diff_packets = list(set(full_packets) - set(received_sequences))
-                    sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
+                    # if we've received every sequence number up to the one indicated
+                    # in the request, we're done
+                    # TODO: this algorithm is broken, please fix
+                    full_packets = list(range(finished_file_request.last_seq + 1))
+                    if received_sequences == full_packets:
+                        # make sure that the file matches the checksum
+                        with open(path, "rb") as f:
+                            checksum = get_checksum(f.read())
+                            if checksum != fileinfo.checksum:
+                                # ask to resend all packets
+                                sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
+                                continue
+
+                        # remove the filename from self.files
+                        del self.files[send_file_request.filename]
+                        sock.send_wiretype(
+                            SendFileReply(filename)
+                        )
+                        break
+                    else:
+                        # we missed a packet
+                        # ask to resend the missed packets
+                        diff_packets = list(set(full_packets) - set(received_sequences))
+                        sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
 
         # connection is now implicitly closed
+
+# testing harness
+class Test:
+    client: Client
+    server: Server
+
+    def __init__(self, client: Client, server: Server):
+        self.client = client
+        self.server = server
+
+    def run(self):
+        # run in separate threads
+        pool = futures.ThreadPoolExecutor(max_workers=2)
+        pool.submit(self.client.run, self.client)
+        pool.submit(self.server.run, self.server)
 
 def main():
     mode = sys.argv[1]
