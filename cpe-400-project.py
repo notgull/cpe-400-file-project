@@ -911,6 +911,9 @@ def main():
     elif mode == "server":
         server = Server()
         server.run()
+    elif mode == "test":
+        test = Test(Client(), Server())
+        test.run()
     else:
         print("Invalid mode: {}".format(mode))
         sys.exit(1)
