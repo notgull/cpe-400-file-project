@@ -124,6 +124,19 @@ class WireRepr(ABC):
         """
         pass
 
+class NoOp(WireRepr):
+    def to_wire(self) -> Mapping[str, Any]:
+        return {
+            'type': 'no_op'
+        }
+
+    @classmethod
+    def from_wire(cls, mapping: Mapping[str, Any]) -> 'NoOp':
+        if mapping['type'] != 'no_op':
+            raise ValueError("bad value")
+
+        return cls()
+
 class OpenRequest(WireRepr):
     """
     The initial request sent from the client to the server before
@@ -868,7 +881,10 @@ class Client:
         Send the OpenRequest to begin the handshake.
         """
 
-        num_concurrent = DEFAULT_CONCURRENCY
+        num_concurrent = unwrap_or(find_argument("--concurrent"), DEFAULT_CONCURRENCY)
+        if isinstance(num_concurrent, str):
+            num_concurrent = int(num_concurrent)
+
         filenames = [info.filename for info in self.files.values()]
         checksums = {info.filename: info.checksum for info in self.files.values()}
 
@@ -940,6 +956,7 @@ class Client:
             # if we received a SendFileReply, we're done
             if isinstance(response, SendFileReply):
                 del self.current_ports[file.filename]
+                print(f"sent file in full: {file.filename}")
                 break
             elif isinstance(response, ResendPacketsReply):
                 sequences = response.packets
@@ -952,9 +969,16 @@ class Client:
     def log_responses(self):
         while self.running:
             # receive the next packet
-            response = self.sock.recv_many_wiretype(
-                ReadyForFileReply, SendFileReply, ResendPacketsReply
-            )
+            try:
+                response = self.sock.recv_many_wiretype(
+                    ReadyForFileReply, SendFileReply, ResendPacketsReply
+                )
+            except ValueError:
+                # main thread is trying to wake us up
+                break
+
+            if response is None:
+                break
 
             # add the response to the map
             self.responses[response.filename] = response
@@ -983,8 +1007,6 @@ class Client:
             threads.append(th)
             self.active += 1
 
-            print(f"active threads: {self.active}")
-
             # limit concurrent processes
             while self.active >= self.num_concurrent:
                 time.sleep(0.1)
@@ -992,6 +1014,11 @@ class Client:
         # wait for all threads to finish
         for th in threads:
             th.join()
+
+        # wake up the logger thread
+        self.running = False
+        self.sock.send_wiretype(NoOp())
+        logger.join()
 
         # connection is now implicitly closed
 
@@ -1025,12 +1052,19 @@ class Server:
     sock: BufferedSocket
     file_count: int
     num_concurrent: int
+    running: bool
+
+    send_file_requests: Sequence[SendFileRequest]
+    finished_file_requests: Mapping[str, FinishedFileRequest]
 
     def __init__(self, file_root: Path):
         self.files = {}
         self.working_ports = []
         self.file_root = file_root
         self.file_count = 0
+        self.send_file_requests = []
+        self.finished_file_requests = {}
+        self.running = True
 
     def begin_listening(self) -> None:
         """
@@ -1073,6 +1107,26 @@ class Server:
         # send an Open reply with this information
         self.sock.send_wiretype(OpenReply(self.working_ports, open_request.num_concurrent))
 
+    def log_requests(self) -> None:
+        while self.running:
+            # receive a SendFileRequest or a FinishedFileRequest
+            try:
+                request = self.sock.recv_many_wiretype(
+                    SendFileRequest, FinishedFileRequest
+                )
+            except ValueError:
+                # main thread is probably trying to wake us up
+                continue
+
+            # add the request to the appropriate list
+            if isinstance(request, SendFileRequest):
+                self.send_file_requests.append(request)
+            elif isinstance(request, FinishedFileRequest):
+                self.finished_file_requests[request.filename] = request
+            else:
+                # invalid; main thread is waking us up
+                break
+
     def recv_file(self, sfe: SendFileRequest) -> None:
 #        print("recv file was run")
         filename = sfe.filename
@@ -1102,13 +1156,18 @@ class Server:
             f.close()
 
             # wait for the FinishedFileRequest
-            finished_file_request = self.sock.recv_wiretype(FinishedFileRequest)
+            while True:
+                if filename in self.finished_file_requests:
+                    finished_file_request = self.finished_file_requests[filename]
+                    del self.finished_file_requests[filename]
+                    break
+                time.sleep(0.1)
 
             # if we've received every sequence number up to the one indicated
             # in the request, we're done
             full_packets = finished_file_request.sequences
             if received_sequences == full_packets:
-#                print(f"recv file in full: {filename}")
+                print(f"recv file in full: {filename}")
                 # make sure that the file matches the checksum
                 with open(path, "rb") as f:
                     data = f.read()
@@ -1133,11 +1192,18 @@ class Server:
                 self.sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
 
     def recv_files(self) -> None:
+        logger = threading.Thread(target=self.log_requests)
+        logger.start()
+
         # wait for a SendFileRequest
         thread_list = []
         while self.file_count > 0:
             # wait for the send file request
-            send_file_request = self.sock.recv_wiretype(SendFileRequest)
+            while True:
+                if len(self.send_file_requests) > 0:
+                    send_file_request = self.send_file_requests.pop(0)
+                    break
+                time.sleep(0.1) 
 
             # spawn a new thread
             f = threading.Thread(target=self.recv_file, args=(send_file_request,))
@@ -1149,6 +1215,11 @@ class Server:
         # wait for all threads to finish
         for thread in thread_list:
             thread.join()
+
+        # done; set running to false and wake up the logger thread
+        self.running = False
+        self.sock.send_wiretype(NoOp())
+        logger.join()
 
     def run(self):
         self.begin_listening()
@@ -1188,7 +1259,7 @@ def test_single_file() -> None:
 
             def run_client(client: Client) -> None:
                 # run the client
-                print(client.files)
+#                print(client.files)
                 client.send_file(next(iter(client.files.values())))
 
             def run_server(server: Server, path: Path) -> None:
