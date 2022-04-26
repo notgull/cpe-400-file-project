@@ -35,8 +35,8 @@ General Guide to this file:
 """
 
 from abc import ABC, abstractmethod, abstractclassmethod
-from concurrent import futures
 from pathlib import Path
+import time
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar, Union
 
 import array
@@ -49,11 +49,13 @@ import socket
 import struct
 import sys
 import tempfile
+import threading
 
 # constants
 
 BLOCK_SIZE = 2**14
 COUNT_AT_A_TIME = 2**10
+DEFAULT_CONCURRENCY = 1
 DEFAULT_PORT = 27850
 DEFAULT_FILE_PORT = 27851
 TIMEOUT = 30
@@ -493,6 +495,8 @@ class BufferedSocket:
         Receive a wire-encoded object from the buffer.
         """
 
+#        print(f"receiving: {ty}")
+
         map = self.recv_json()
         return ty.from_wire(map)
     
@@ -501,7 +505,7 @@ class BufferedSocket:
         Send a wire-encoded object across the buffer.
         """
 
-        print(type(obj))
+#        print(f"sending: {obj}")
         by = obj.to_wire()
         self.send_data(json.dumps(by).encode('utf-8'))
 
@@ -511,6 +515,8 @@ class BufferedSocket:
         """
 
         map = self.recv_json()
+
+#        print(f"receiving one of: {args}")
 
         # try all of the args as constructors until we find one that
         # doesn't die
@@ -579,7 +585,7 @@ class FilePacketSender:
 
     sock: socket.socket
     seq_num: int
-    used_seq_num: int
+    sequences: Sequence[int]
     file_reader: BinaryIO
     host: Optional[str]
     port: Optional[int]
@@ -593,7 +599,7 @@ class FilePacketSender:
     ) -> None:
         self.sock = sock
         self.seq_num = 0
-        self.used_seq_num = 0
+        self.sequences = []
         self.file_reader = file_reader
         self.host = host
         self.port = port
@@ -622,7 +628,7 @@ class FilePacketSender:
                 continue
 
             # send the packet
-            self.used_seq_num = self.seq_num
+            self.sequences.append(packet.header.seq_num)
             #print(f"sending:\n{packet}")
             self.send_packet(packet)
 
@@ -631,7 +637,7 @@ class FilePacketSender:
         #print(f"sending:\n{zsp}")
         self.send_packet(zsp)
 
-        return self.used_seq_num
+        return self.sequences
 
     def read_packet(self) -> Optional[FilePacket]:
         """
@@ -663,6 +669,8 @@ class FilePacketSender:
         """
         Send a packet across the UDP socket.
         """
+
+#        print(f"sending packet:\n{packet}")
 
         # send the packet
         if self.host is not None and self.port is not None:
@@ -706,7 +714,7 @@ class FilePacketReader:
         # parse the packet
         packet = FilePacket.from_bytes(data)
 
-        print(f"recv:\n{packet}")
+#        print(f"recv packet:\n{packet}")
 
         # if the packet's size is 0, we're done
         if packet.header.size == 0:
@@ -775,6 +783,7 @@ def test_file_packet():
             # check that the file is correct
             l = f.read()
             r = f2.read()
+            #print(l)
             assert l == r
 
     print("file senders work")
@@ -818,6 +827,7 @@ class Client:
 
     current_ports: Mapping[str, int]
     hostname: str
+    active: int
 
     def __init__(self, folder: str, hostname: str):
         self.files = {}
@@ -826,6 +836,62 @@ class Client:
         self.running = True
         self.folder = folder
         self.hostname = hostname
+        self.active = 0
+        
+        # read in all files (recursively) from the folder specified in the second
+        # argument        
+        for root, dirs, files in os.walk(self.folder):
+            for filename in files:
+                filename = os.path.join(root, filename)
+
+                # get the checksums  for the file
+                with open(filename, 'rb') as f:
+                    checksum = get_checksum(f.read())
+
+                # add the file to the list of files
+                self.files[filename] = FileInfo(filename, checksum)
+
+    def open_socket(self) -> None:
+        """
+        Opens the socket and connects to the server.
+        """
+
+        port = unwrap_or(find_argument("--port"), DEFAULT_PORT)
+
+        # start up a TCP socket connected to the given hostname and port
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((self.hostname, port))
+        self.sock = BufferedSocket(sock)
+
+    def begin_handshake(self) -> None:
+        """
+        Send the OpenRequest to begin the handshake.
+        """
+
+        num_concurrent = DEFAULT_CONCURRENCY
+        filenames = [info.filename for info in self.files.values()]
+        checksums = {info.filename: info.checksum for info in self.files.values()}
+
+        self.sock.send_wiretype(OpenRequest(filenames, num_concurrent, checksums))
+
+    def read_handshake(self) -> None:
+        """
+        Read the OpenReply to complete the handshake.
+        """
+
+        # wait for an Open reply in response
+        open_reply = self.sock.recv_wiretype(OpenReply)
+
+        self.num_concurrent = open_reply.num_concurrent
+        self.ports = open_reply.ports
+
+    def choose_port(self, file: FileInfo) -> int:
+        while True:
+            for port in self.ports:
+                if port in self.current_ports.values():
+                    continue
+                self.current_ports[file.filename] = port 
+                return port
 
     def send_file(self, file: FileInfo) -> None:
         """
@@ -833,13 +899,7 @@ class Client:
         """
 
         # choose a port that is not currently in use
-        for port in self.ports:
-            if port in self.current_ports.values():
-                continue
-            self.current_ports[file.filename] = port 
-            break
-
-        current_port = self.current_ports[file.filename]
+        current_port = self.choose_port(file)
 
         self.sock.send_wiretype(SendFileRequest(
             file.filename,
@@ -859,15 +919,18 @@ class Client:
         # open a UDP socket to send files over
         while True:
             file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            with FilePacketSender(file_sock, open(file.filename, "rb"), self.hostname, current_port) as sender:
-                last_seq = sender.send()
+            f = open(file.filename, "rb")
+            sender = FilePacketSender(file_sock, f, self.hostname, current_port)
+            last_seq = sender.send(sequences)
+            f.close()
+            file_sock.close()
 
             # indicate that we've sent the file
             self.sock.send_wiretype(
                 FinishedFileRequest(file.filename, last_seq)
             )
 
-            # wait for the response from the server
+            # wait for the respconse from the server
             while True:
                 if file.filename in self.responses:
                     response = self.responses[file.filename]
@@ -883,65 +946,44 @@ class Client:
             else:
                 raise ValueError("shouldn't get ready for in progress file")
 
+#        print("done sending file")
+        self.active -= 1
+
+    def log_responses(self):
+        while self.running:
+            # receive the next packet
+            response = self.sock.recv_many_wiretype(
+                ReadyForFileReply, SendFileReply, ResendPacketsReply
+            )
+
+            # add the response to the map
+            self.responses[response.filename] = response
+
     def run(self):
-        # read in all files (recursively) from the folder specified in the second
-        # argument        
-        for root, dirs, files in os.walk(self.folder):
-            for filename in files:
-                filename = os.path.join(root, filename)
-
-                # get the checksums for the file
-                with open(filename, 'rb') as f:
-                    checksum = get_checksum(f.read())
-
-                # add the file to the list of files
-                self.files[filename] = FileInfo(filename, checksum)
-
         # create the socket
-        hostname = sys.argv[3]
-        port = unwrap_or(find_argument("--port"), DEFAULT_PORT)
-
-        # start up a TCP socket connected to the given hostname and port
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((hostname, port))
-        self.sock = BufferedSocket(sock)
+        self.open_socket()
 
         # send the Open request to indicate that we're open for business
-        num_concurrent = 16
-        filenames = [info.filename for info in self.files.values()]
-        checksums = {info.filename: info.checksum for info in self.files.values()}
-
-        self.sock.send_wiretype(OpenRequest(filenames, num_concurrent, checksums))
-
-        # wait for an Open reply in response
-        open_reply = self.sock.recv_wiretype(OpenReply)
-
-        self.num_concurrent = open_reply.num_concurrent
-        self.ports = open_reply.ports
-
-        # begin sending files
-
-        # create pool object with given number of processes
-        pool_obj = futures.ThreadPoolExecutor(max_workers=self.num_concurrent) 
+        self.begin_handshake()
+        self.read_handshake()
 
         # create a thread that just sits on the socket and logs its responses
         # into the responses map
-        def log_responses():
-            while self.running:
-                # receive the next packet
-                response = self.sock.recv_many_wiretype(
-                    ReadyForFileReply, SendFileReply, ResendPacketsReply
-                )
-
-                # add the response to the map
-                self.responses[response.filename] = response
 
         # start the thread in the multiprocessing pool
-        logger = pool_obj.submit(log_responses)
+        logger = threading.Thread(target=self.log_responses)
+        logger.start()
 
         # submits individual elements of the iterable "self.files.values()" 
         # as tasks to be processed by the pool
-        futures.wait(pool_obj.map(self.send_file, list(self.files.values())))
+        threads = []
+        for file in self.files.values():
+            threads.append(threading.Thread(target=self.send_file, args=(file,)))
+            self.active += 1
+
+            # limit concurrent processes
+            while self.active >= self.num_concurrent:
+                time.sleep(0.1)
 
         # we're done
         logger.cancel()
@@ -974,8 +1016,10 @@ class Server:
     files: Mapping[str, FileInfo]
     working_ports: Sequence[int]
     file_root: Path
+    listener: socket
     sock: BufferedSocket
     file_count: int
+    num_concurrent: int
 
     def __init__(self, file_root: Path):
         self.files = {}
@@ -983,9 +1027,51 @@ class Server:
         self.file_root = file_root
         self.file_count = 0
 
+    def begin_listening(self) -> None:
+        """
+        Begin listening on the target port.
+        """
+
+        # open a listener on the default port
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('0.0.0.0', unwrap_or(find_argument("--port"), DEFAULT_PORT)))
+        listener.listen(1)
+        self.listener = listener
+
+        print("waiting for client...")
+
+    def accept_client(self) -> None:
+        # accept the client response
+        sock, _ = self.listener.accept()
+        sock = BufferedSocket(sock)
+        self.sock = sock
+
+    def handshake(self) -> None:
+        """
+        Wait for an OpenRequest, analyze it, and send back an OpenReply
+        """
+
+        # wait for an Open request that contains information
+        # about the files we're going to receive
+        open_request = self.sock.recv_wiretype(OpenRequest)
+
+        # register the file info
+        for filename in open_request.filenames:
+            checksum = open_request.checksums[filename]
+            self.files[filename] = ServerFileInfo(filename, checksum)
+            self.file_count += 1
+
+        # decide how many working ports we want
+        self.working_ports = list(range(DEFAULT_FILE_PORT, DEFAULT_FILE_PORT + open_request.num_concurrent))
+        self.num_concurrent = open_request.num_concurrent
+
+        # send an Open reply with this information
+        self.sock.send_wiretype(OpenReply(self.working_ports, open_request.num_concurrent))
+
     def recv_file(self, sfe: SendFileRequest) -> None:
+#        print("recv file was run")
         filename = sfe.filename
-        filesize = sfe.filesize
+        filesize = sfe.size
         port = sfe.port
 
         # this indicates the size of the file, as well as the server port
@@ -995,17 +1081,20 @@ class Server:
         file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         file_sock.bind(('', port))
 
-        # we are ready
+        # we are ready 
         self.sock.send_wiretype(ReadyForFileReply(fileinfo.filename))
 
         while True:
             # begin receiving files over the designated port
             # open a UDP listening socket
-            path = os.path.join(self.file_root, fileinfo.filename)
+            path = os.path.join(self.file_root, os.path.basename(fileinfo.filename))
             f = open(path, "wb")
-            with FilePacketReader(file_sock, f, filesize) as receiver:
-                # receive the file
-                received_sequences = list(receiver.read())
+            #print("beginning file read")
+            receiver = FilePacketReader(file_sock, f)
+            # received the file
+            received_sequences = list(receiver.read())
+            receiver.sock.close()
+            f.close()
 
             # wait for the FinishedFileRequest
             finished_file_request = self.sock.recv_wiretype(FinishedFileRequest)
@@ -1014,9 +1103,12 @@ class Server:
             # in the request, we're done
             full_packets = finished_file_request.sequences
             if received_sequences == full_packets:
+#                print(f"recv file in full: {filename}")
                 # make sure that the file matches the checksum
                 with open(path, "rb") as f:
-                    checksum = get_checksum(f.read())
+                    data = f.read()
+#                    print(data)
+                    checksum = get_checksum(data)
                     if checksum != fileinfo.checksum:
                         # ask to resend all packets
                         self.sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
@@ -1030,49 +1122,35 @@ class Server:
                 break
             else:
                 # we missed a packet
-                # ask to resend the missed packets
+                # ask to resend the miss(ed packets
                 diff_packets = list(set(full_packets) - set(received_sequences))
+                print(f"missed packets: {diff_packets}")
                 self.sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
 
-    def run(self):
-        # open a listener on the default port
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.bind(('', unwrap_or(find_argument("--port"), DEFAULT_PORT)))
-
-        print("waiting for client...")
-
-        # wait for a connection
-        listener.listen(1)
-        sock, addr = listener.accept()
-        sock = BufferedSocket(sock)
-        self.sock = sock
-
-        # wait for an Open request that contains information
-        # about the files we're going to receive
-        open_request = sock.recv_wiretype(OpenRequest)
-
-        # register the file info
-        for filename in open_request.filenames:
-            checksum = open_request.checksums[filename]
-            self.files[filename] = ServerFileInfo(filename, checksum)
-            self.file_count += 1
-
-        # decide how many working ports we want
-        self.working_ports = list(range(DEFAULT_FILE_PORT, DEFAULT_FILE_PORT + open_request.num_concurrent))
-
-        # send an Open reply with this information
-        sock.send_wiretype(OpenReply(self.working_ports, open_request.num_concurrent))
-
-        # open an executor, for concurrency
-        pool = futures.ThreadPoolExecutor(max_workers=open_request.num_concurrent)
-
+    def recv_files(self) -> None:
         # wait for a SendFileRequest
-        while len(self.files) > 0:
+        thread_list = []
+        while self.file_count > 0:
             # wait for the send file request
-            send_file_request = sock.recv_wiretype(SendFileRequest)
+            send_file_request = self.sock.recv_wiretype(SendFileRequest)
 
             # spawn a new thread
-            pool.submit(self.recv_file, self, send_file_request)
+            f = threading.Thread(target=self.recv_file, args=(send_file_request,))
+            f.start()
+            thread_list.append(f)
+
+            self.file_count -= 1
+
+        # wait for all threads to finish
+        for thread in thread_list:
+            thread.join()
+
+    def run(self):
+        self.begin_listening()
+        self.accept_client()
+        self.handshake()
+
+        self.recv_files()
 
         # connection is now implicitly closed
 
@@ -1082,56 +1160,54 @@ def test_single_file() -> None:
     # file in
     with tempfile.TemporaryDirectory() as send_dir:
         with tempfile.TemporaryDirectory() as recv_dir:
-            recv_dir = "."
-
             # fill a binary file with random info
             path = os.path.join(send_dir, "test.bin")
             data = os.urandom(1024)
             with open(path, "wb") as f:
                 f.write(data)
 
-            def run_client(path: Path) -> None:
-                # open a client
-                client = Client(path, "localhost")
+            # open a client and server
+            client = Client(send_dir, "localhost")
+            server = Server(recv_dir)
 
-                client.ports = [27851]
-                client.files = {
-                    "test.bin": FileInfo(path, get_checksum(data))
-                }
-                client.num_concurrent = 1
+            # go through the handshake
+            server.begin_listening()
+            client.open_socket()
+            server.accept_client()
 
+            client.begin_handshake()
+            server.handshake()
+            client.read_handshake()
+
+            assert 27851 in client.ports
+
+            def run_client(client: Client) -> None:
                 # run the client
-                client.send_file("test.bin")
+                print(client.files)
+                client.send_file(next(iter(client.files.values())))
 
-            def run_server(path: Path) -> None:
-                # open a server
-                server = Server(path)
+            def run_server(server: Server, path: Path) -> None:
+                try:
+                    server.recv_files()
+                finally:
+                    server.listener.close()
 
-                server.files = {
-                    "test.bin": ServerFileInfo("test.bin", get_checksum(data))
-                }
-                server.working_ports = [27851]
-                server.file_count = 1
-
-                sfe = SendFileRequest(
-                    "test.bin",
-                    1024,
-                    27851
-                )
-
-                # run the server
-                server.recv_file(sfe)
+            def log_drop_err(client: Client) -> None:
+                try:
+                    client.log_responses()
+                except:
+                    pass
 
             # open a thread for the client and
             # another for the server
-            pool = futures.ThreadPoolExecutor(max_workers=2)
-            print(f"Dirs: {send_dir} {recv_dir}")
-            f1 = pool.submit(run_client, send_dir)
-            f2 = pool.submit(run_server, recv_dir)
-            futures.wait([f1, f2])
-
-            # wait for user input
-            input("Press enter to continue...")
+            f1 = threading.Thread(target=run_client, args=(client,)) 
+            f2 = threading.Thread(target=run_server, args=(server,path))
+            f3 = threading.Thread(target=log_drop_err, args=(client,))
+            f1.start()
+            f2.start()
+            f3.start()
+            f1.join()
+            f2.join()
 
             # make sure files are equal
             with open(os.path.join(recv_dir, "test.bin"), "rb") as f:
