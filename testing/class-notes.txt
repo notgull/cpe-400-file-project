@@ -1,0 +1,1301 @@
+CPE 470, 18 Jan 2022
+
+Introduction
+
+A robot is a programmable machine that imitates the actions or appearance of an intelligent creature- usually a human. To qualify as a robot, a machine has to be able to:
+- Sensing and perception: get information from its surroundings
+- Carry out different tasks: locomotion or manipulation, do something physical- such as move or manipulate objects
+- Re-programmable: can do different things
+- Function autonomously and interact with human beings
+
+Different kinds of robots: drones, arms, mobile robot
+
+Mobile Robot = any system which is:
+
+1). mobile - entire system moves wrt environment
+2). somewhat autonomous - limited human interaction
+3). intelligent - senses and reacts to its environment
+
+Taxonomy of mobile robots
+1). Terrainability (ability to negotiate terrain) indoor or outdoor
+2). Type of Locomotion - wheeled, legged, tracked, serpentine (like snake robot)
+3). Type of Steering - Differential, ackerman (car like), synchronous, skid, etc
+4). Body Flexibility - Unibody or multibody, flexible or rigid body
+5). Medium of transport - land, water, fuel, pipes, air, undersea, space
+6). general class - service robots, research, education
+
+CS 456, 18 Jan 2022
+
+Quiz for every class.
+
+ENGR 241, 18 Jan 2022
+
+we have a notebook lol
+
+Statics = predicting and describing rest condition of objects
+
+CS 457, 18 Jan 2022
+
+World is drowning in data that we need to manage, use, build and optimize a database system
+
+H1: Metadata Management
+H2: Basic data management
+H3: Data aggregates
+H4: advvanced topics
+
+CPE 400, 19 Jan 2022
+
+CPE 470, 20 Jan 2022
+
+Grey Walter's Machina, or Tortoise (1950) first autonomous vechile
+
+Photocel, contact snesors
+Steering motor on wheel, driving motor on wheel
+Seeking light, head toward weak light, back away from bright light,
+turn and push obstacle avoidance, recharge battery
+
+Shakey first complete robot system,
+recognizie an object using vision, find way to object, push object over
+
+The stanford cart- stereo vision, take pictures from different angles, distance between
+cart and obstacles in cart's path
+
+CMU rover - stanford, camera mounted on pan/tilt infrared and sonar sensors
+three independently powered steered weheel, or synchronosu drive to overcome
+stanford cart limitations
+
+ASIMO, NAO, PR2
+
+Localization: post estimation, calculate x, y, theta in plane
+
+PWI Pioneer 3, affordable robot, Khepera Robot
+
+CS 456, 20 Jan 2022
+
+overview + review proofs
+
+Languages = grammars = automato
+
+Regular, context-force, context-sensitive, recursive, each have a grammar associated
+
+G = (V,T,S,P)
+
+dfa/hla
+
+finite acceptors
+pda = push-down automata
+
+ta = turing machine
+
+p -> q = p implies q
+p <-> q = p -> q and q -> p
+A = B == A c B and B c A, where A and B are both sets
+
+show that (A n B)' = A' u B', A, B are sets
+
+show that (A n B)' c A' u B', and A' u B' c (A n B)'
+
+let x <- (A n B)' => x </ A n B => X <\ a OR X <\ b
+ => X < a' OR x < b' => X < A' u B'
+ 
+ 2). A' u B' < (A n B)'
+ 
+ x is not in A' or x is not in B' => 
+
+ENGR 241, 20 Jan 2022
+
+F projection angles, F = 100 lbs, Fz = 100 sin 60 = 86.6 lbs
+F' = 100 cos 60 = 50 lbs
+
+F' = 50, 45 deg, Fx = 50 cos 45 = 35.36, Fy = 50 sin 45 = 35.36, note negative Y
+a = 111, B = 69.3,
+cos^2(111) + cos^2(69.3) + cos^2(gamma) = 1, ^G = 80 ^ug
+
+^u = cos(111)i + cos(69.3)j + cos(30) k
+
+CS 457, 20 Jan 2022
+
+Database = collection of files storing related data,
+accounts database, payroll database, et cetera
+DBMS = database management system, manage a large database efficiently and allows it to persist
+Oracle, SQLite, PostgreSQL, MySQL, Microsoft SQL Server
+
+Describe real-world entities in terms of stored data
+Persistently store large datasets
+Efficiently query and update
+Change structure
+Concurrency control
+Crash recovery
+
+DBMS simplifies application data storage
+
+One server, many clients, clients talk to server
+
+CPE 400, 24 Jan 2022
+
+CS 456, 25 Jan 2022
+
+Z = alphabet (input ) = finite set of symbols
+Sigma* = set of all strings that are symbols concatenated together from Z
+string = a concat of synmboils from c
+lambda =  string with no symmbols
+L = language, set of strings from Soigma*
+
+Reversed = all strings in L are reversed 
+L' = Sigma* - L
+
+M = finite state machine, finite numer of states = (Q, Sigma, Delta, q0, F)
+
+Q = finite set of internal states
+Sigma = input alphabet
+Delta = finite set of functions, transition funcs
+q0 = initial state in Q
+F = finite set of final states in Q
+
+ENGR 241, 25 Jan 2022
+
+A(0, 0, 14)
+D(2, 6, 0)
+
+F_{DA} = 400 lb * (uDA) = 400lb * (r_{DA} / |r_{DA}|)
+A - D = (-2, -6, 14), M = 15.36
+F_{DA} = (-52.1i - 156j + 365k) lb
+
+FR = F_{CA} + F_{CB}
+FCA = 100 * (r_{CA} / |r_{CA})
+FCB = 81 * (r_{CB} / |r_{CB})
+
+A = (-3 sin 40, 4 cos 40, 0) = (-1.92, -2.29, 0)
+B = (4, -7, 0)
+C = (0, 0, 4)
+
+r_{CA} = (-1.92, -2.29, 4), FCA = (-38.45, 45.86, -80.11)
+r_{CB} = (4, -7, 4), FCB = (36, -63, 36)
+
+Sum Forces = (2.57, 17.04, 116)
+Fr 117 lb
+a = 91.3
+b = 98.4
+y = 172
+
+A|| = A|| Ua a'
+A|_ = (A^2 - A||^2)^(1/2)
+
+Find angle between force vector and pull
+
+F = (-20, 50, -10)
+P = (3, -2, 6)
+
+F = = 54.77 lb
+r_{A0} = (-3, 2, -6), r_{a0} mag = (-3/7, 2/7, -6/7)
+
+Angle = cos-1(-20(-3) + 
+
+27 Jan 2022
+
+Velocity of contact point P
+V = (r * w) a_x
+Where a_x = A unit vector to X axis
+Restriction to robot mobility: point P cannot move to the direction perpendicular to hte plane of the wheel
+
+Off-centered orientable wheels
+
+v = (r * w) a_x + (d * t) a_y
+
+Mecanum/Swedish Wheel
+
+v = (r * w) a_x + Ua_s
+
+a_s = unit vector to the motion of roller
+
+WMR: Instantaneous center of rotation or curvature, a cross point of all axes of the wheels
+
+degree of mobility: degree of freedom of the robot motion
+
+degree of steerability
+
+Position - (x, y, Theta), w = lin velocity, w = ang velocitry
+
+Where a_y is unit Y axis
+
+CS 456, 27 Jan 2022
+
+sigma = Q * Sigma -> Q
+Q = finite set of internal states
+ Sigma = input alphabet - finite set of symbols
+ 
+dfa can be represented via graph
+
+CPE 470, 1 Feb 2022
+
+differential drive, P = (x, y, theta), v = lin vel, w = ang wel
+
+V_r(t) = linear vel of right wheel
+V_l(t) = linear vel of left wheel
+r = nominal radius of each wheel
+R = instantaneous curvature radius of the robot trajectory, relative to the midpoint axis
+
+V_L = r w_L, V_R = r w_R
+
+(x^., y^., Theta^.) = ((cosTheta, 0), (sinTheta, 0), (0, 1)) * (v, w)
+H  p = (sinTheta - cosTheta) (x^., y^.) = x^. sinTheta - y^. cosTheta = 0
+H = unit vector orthogonal to the plane of wheels
+
+ICR = instantaneous center of rotation
+
+(VR - VL)/L = VR/(R + L/2), (VR - VL)/L = Vl/(R - L/2)
+
+R = L/2 * (VR + VL)/(VR- VL)
+
+Straight motion, R = infinity, VR = VL
+
+Rotational motion, R = 0, VR = -VL
+
+Turning, R!=0, VR!=VL
+
+Steered wheel, the orientation of the rotation axis can be controlled
+
+In a sync drive robot, each wheel is capable of being driven/sterred
+
+three sterred wheels arranged in equalateral triangle, all wheels turn in unison,
+holonomic behavior (move in any direction)
+
+x(t) = S_0^t v(Delta) cos(Theta(Delta)) dDelta
+y(t) = S_0^t v(Delta) sin(Theta(Delta)) dDelta
+Theta(t) = S_0^t w(Delta) dDelta
+
+ICC is always infinity
+
+v(t) = 0, w(t) = w, OR v(t) = v, w(t) = 0
+
+Tricycle robot: three wheels and odometers on two real wheels
+steering and power provided through front wheel
+controls:
+ - sterring direction a(t)
+ - angular velocity of steering wheel ws(t)
+ 
+ICC must lie on the line that passes through, and is perpendicular to the fixed rear wheels
+
+V_s(t) = W_s(t) r
+
+R(t) = d tg (pi/2 - a(t))
+w(t) = (w_s (t) r)/(sqrt(d^2 + R(t)^2)) = w(t) = v_s(t)/d * sin(a(t))
+
+Car drive Ackerman steering
+used in motor vehicles, inside front wheel is rotatated, accurate dead rockening solution
+good for outdoor aut. vehicles
+
+cot(Theta_i) - cot(Theta_o) = d/l,
+d = dist between wheels, l = dist between wheel sets
+
+cot(Theta_sa) = cot(Theta_i) + d/2l, or cot(Theta_o) - d/2l
+
+-=--=
+
+L = (a^n * b: n >= 1)
+
+-> (q0) (a) -> (q1) 9 (a)
+
+-> (q0) -> a -> (q1) -> b -> (q2) 9
+
+trap state
+
+ENGR 241, 27 Jan 2022
+
+active = move, reactive = resist
+
+Find unknowns
+
+E of Es: sigma Ex, sigma Ey
+
+Start with point E, there are only two unknowns
+
+A language L is Regular iff exists some dfa M, L(M) = L
+
+if L is regular than so are L^2, L^3, ...
+
+Two languages are equivalent if they have the same DFAs,
+Two DFAs are equal if languages are equal
+
+NFAs are nondeterministic
+NFA = (q, z, d, q0, F)
+q = finite set of internal states
+z = finite set of symbols (input alphabet)
+d = finite set of instructions
+q0 = initial state, element of q
+F = finite set of final states, at least one, F c q
+
+delta: Q x (z u {lambda}) -> 2^q
+
+e.g
+
+Q = {q0, q1, q2}
+z = {a, b},
+2^q = 8
+
+ex of delta
+  (q0, a) = {q0, q2}
+  
+Mo = +Fy(a) - Fx(b)
+
+Mo = r& x F&
+
+C = ABsin(0)
+
+MA = F * d
+d must be perpendicular to force
+
+1). resolve F in Fx, Fy
+
+Fx = 400cos20 <-
+Fy = 400sin20 V
+
+Sum of Moments about A = 400 cos 20 N (2m) + 400 sin 20 N (3 m)
+
+O = 0,0,0, A = 3,6,0
+m = r x f
+
+roa = A - o = 3 + 6 + 0
+
+m0 = |(i,j,k),(3,6,0),(3,2,-1)
+
+Fy = 40 cos 20, Fx = 40 sin 20
+
+M0 = 40 cos 20 * (200 mm) + 40 sin 20 (30 mm)
+
+look for distance perpendicular to vector
+
+Ma = ua * (r x F) = |(uax, uay, uax), (rx, ry, rz), (Fx, Fy, Fz)|
+
+Force is used to open a gas valve, find magnitude of moment of this fore about the z axis
+
+A = 0,0,.4, B = .25sin30, .25cos30, .4
+uz = k
+Fb = 60i + 20j + 15k
+rAb = .125i + .2156j
+
+Mz = |(0,0,1),(.125,.2165,0),(-60,20,16)|
+Mz = 15.5 Nm
+
+CPE 470, 3 Feb 2022
+
+Hx = Z, two scalar vectors, x, z, H is a translation matrix
+
+s^2(x^) = |Hx^ - z|^2 = \sum_{i = 1}^m [ \sum_{j = 1}^n h_{ij} x^_j - z_i ]^2
+
+0 = ds^2/sx^k = 2 \sum_{i = 1}^m h_ik [ \sum_{j=1}^{n} h_ij x^_j - zi ]
+
+H^t H x^ = H^T z
+
+Gramian of the Linera Least Squares Problem, normal equation has the solution:
+
+x^ = (H^T H)^-1 H^T z
+
+G = H^t H
+
+G is the Gramiam matrix, determinant characterizes whether or not H is linearly independent, 0 = dependent and x^ not determined uniquely, if nonzero, x^ is unique
+
+x^ = [\int_{t_0}^{t_f} H^T (t) H(t) dt ]^-1 [\int_{t_0}^{t_f} H_T (t) z(t) dt ]
+
+G = \int_{t_0}^{t_f} H^T(t) H(t) dt
+
+x(t) = F(t) x(t) + w(t)
+z(t) = H(t) x(t) + v(t)
+E(w(t)) = 0
+E(w(t) w^T(s)) = \delta(t-s)Qt)
+E(v(t)) = 0
+E(v(t)v^T(s)) = \delta(t - s)R(t)
+
+H is the measurement sensititivity matrix
+x^k (+) = K^1_k x^_k (- ) + K^__k z_k
+
+ENGR 241, 3 Feb 2022
+
+TODO: cos(30) instead of cos(60) :-/
+
+Mac u^ . (r^ x Fdb)
+
+axis of rotation, force, must start at axis, go to force
+
+M = Fd
+Mr = M1 + M2
+
++Mr = -48 lb (4 ft) + 40 cos 30 (8 ft) = 85.1ft lbs
+
+CPE 470, 8 Feb 2022
+
+Plant, x.(t) = F(t)x(t) + w(t)
+Measurement, z(t) = H(t)x(t) + v(t)
+Plant Noise, E(w(t)) = 0, E(w(t)w^T(s)) = \delta(t - s) Q(t)
+Obs. Noise, E(v(t)) = 0, E(v(t)v^T(s)) = \delta(t - s)R(t)
+
+zk = Hxk + vk
+
+Measurement is related by this, H is measurement sensitivity
+
+x^ k (+) = k^1_k x^ k (-)  = Kbar_k Z-k
+
+x^(-) = priori estimate of xk, x^(+) is a posteriori
+
+K^1_k and Kbar_k are unknown, find values such that
+
+E<|x_k - x^k(+) | z_i^T) = 0, i = 1, 2, ... k - 1
+E<|x_k - x^k(-) | z_k^t) = 0.
+
+E w_k z_i^T = 0
+E(\Rho_{k - 1} x_{k - 1} + w_{k - 1} - K^1_k x^ k (-) 0 Kbar_k z_k> z_i^T = 0, i = 1, .., k - 1
+
+[1 - k_k^1 - Kbar_k H_k] Ex_k z_i^T = 0 iff
+K_k^1 = I - Kbar_k H_k
+
+1 - Kbar_k H_k - K_k^T = 0
+
+Find Kbar_k E[x_k - x^_k (+)]z_k^T = 0
+
+CS 456, 8 Feb 2022
+
+nfa -> dfa
+
+create a graph starting at graph
+extend delta functions using possibilities
+form a union of them
+create a new vertex for Gd labeled {qmnsmnsmnf}
+
+Free vectors: can be applied at any point on a body and fahve the same external effect, when moving a force off oits line of action - you must add a couple moment to have the same external effect
+
+Given a 2D force and couple system, find the equivalent resultant force and couple moment acting at A
+
+1). sum all x and y components
+
+F(x) = (4/5) 150 lb + 50 lb sin(30) = 145 lb
+F(y) = (3/5) 150 lb + 50 lb cos(30) = 133.3 lb
+
+Fr = 197 lb, Theta = 42.6deg
+
+ccw=+ MRA = 150 (4/5) * 2 ft
+
+CS 457, 8 feb 2022
+
+CPE 470, 10 Feb 2022
+
+Kvar_k = Pk (-) H^T_k[H_k P_k (-) H_k^T + R_k]^-1
+P_k(-) = E<x~_k(-x~_k^T (-)> = Rho_{k - 1} P^(+)_{k - 1} 
+
+Steps:
+
+- Computer P_k(-) using P_{k-1}(+), Rho_{k-1} and Q_{k - 1}
+- Computer Kbar_k using P_k, H_k and R_k
+- Comput P_k(+) using K_bark and P_k(-)
+- Comput successive valyes ofx^_k(+) recursivley using Kbar_k
+
+Rho, Lambda, a are elements of siggma
+
+use integrals to calculate area under curve to get weight of items combined
+
+Fr = Int w(x) dx
+
+Fr1 = 1/2 * 3m * (3 kN/m) = 4.5 kN
+
+
+Fr = Fr1 + Fr2
+
+Get total moment in reverse
+
+Mo = Fr1 d1 + Fr2 d2 = Fr d, solve for d once solved for Fr
+
+CPE 470, 15 Feb 2022
+
+How to implement Kalman Filter:
+
+A_k = Matrix (n x n) that describes how state evolves from k to k - 1
+B_k = Matrix (n x l) that describes how u_k changes state from k to k - 1
+H_k = Matrix (k  n) that describes how to map state X_k to observation Y_k
+w_k and v_k are random variables, independent, normally distributed with respect to covariance matrix Q-k and R-k
+
+state prediction:
+X_k- = A_k X_{k-1} + B_k u_k + w_k
+obs. prediction:
+Y_k = H_k X_k- + v_k
+correction stage
+
+X(k) = X-(k) + K(k) [Z(k) - Y(k)]
+
+K = kalman gain
+
+K_k = P-_k H^T (H P-_k H^T + R)^-1
+e-_k = X_k - X-_{k-1}
+e_k X_k - X-_k
+
+P-_k = E(e-_k e-_k^t)
+P_k = E(e_k e^T_k)
+
+K_k = (P-_k H^T)(H P-_k H^t + R)
+
+P(k) = K-(k) - K(k)H(k)P-(k)
+
+covariance = r matrix
+
+Z(k) = [x_gps(k), y_gps(k), v_odo(k), theta_imu(k), w_odo(k)]
+R(k) = diagonal(coveriances)
+H(k) = diagonal(1,1,1,1,1)
+Z = sensor measurements
+Y = obs. prediction
+
+CS 456, 15 Feb 2022
+
+dfa -> re
+
+r = r^*_1
+
+star, plus ,list of potential inputs
+
+G = (V,T,S,P)
+
+A -> xB or A -> x, A,B < V, x < tT*
+
+G({A,B,S}, {a,b}, S, p)
+
+same grammar rules as in PL
+
+ENGR 241, 15 Feb 2022
+
+Mr = -350 Nm = 100N d + 600 N * d sin(30 deg) + 300 N * d cos (30 deg), d = 1.5432 m
+Couple moments are the same from anywhere
+
+0 = -Bcos(60 deg) + C, 0 = Bsin(60 deg) - 125 kg
+
+CS 456, 17 Feb 2022
+
+Left Linear graamar = A -> Bx, A -> x,
+Right Linear Grammar = A -> xB, A -> x
+
+regular languages are closed under: union, intersection, concatenation,
+
+Assume L is regular
+characteristic of regular language must hold for L
+analyuze those characteristic vis-a-vis L
+show that L does not have those characteristics
+
+Pumping lemma:
+
+S in L, |S| subset P =>
+S = xyz in |xy| c= P
+
+prove L = {a^n b^n: n >= 0} is not regular
+
+Assume L ois regular
+
+S = xyz >= |xy| <= p, |y| >= 1, and S_i = xy
+
+let S = (in language, sufficient length >= P) a^P b^P, S < L = p + p = 2p >= p
+
+p = 3
+
+s = aaaabbb
+
+x = aa, y = ab, z = bb
+indicate which directions are positive
+
+CPE 470, 1 Mar 2022
+
+Establish waht part of space is free for navigation, recognize regions or locations in environments
+Spacial occupancy - evidence grid, occupancyt grid
+Places - topological maps
+
+CS 456 - 1 Mar 2022
+
+Prove that L = {a^n b^{n+2} n >= 0 } is not regular
+
+Assume L is regular => all s in L, |s| >= p, s = xyz and |xy| <= p, |y| >= 1, s_i = xy^iz wher i >= 0, s_i in L
+
+s = a^P b^P+2 s = L, |s| = p + p + 2 = 2p + 2 >= p
+y = a^k, 1 <= k <= p
+
+s_i = a^ki a^p-k b^p+2
+n_a(w) = number of a's in w
+
+Assume tension, answer is positive, tension
+Assume tension, answer is negative, compression
+Assume compression, answeer is positive, compression
+Assume compression, anseer is negative, tension
+
+CPE 470 - 3/3/2022
+
+Rapidly-exploring random tree (RRT), connect q_init to q_goal
+
+connect to nearest vertex, try to add collission free
+
+reduce search space for one dimensional, then apply graph search algorithms:
+vibility graph
+
+exact cell decompositions
+recursively divide into obstacle/free subregions in four quarters
+graph-based search w/ dijkstra's algorithm
+
+Bug 0 algorithm: head toward goal, follow obstacle until you can head towards goal again, continue
+Bug 1: head toward goal, if obstacle is encounterd, circumnavigate and remember how close you got, return to that closest point via wall-followingc
+
+CFL Overview: create a PDA, which defines a CFL
+P: S -> aSa | bSb | x
+
+recursively enumeratble unrestricted
+
+CPE 400, 7 Mar 2022
+
+flow control, application may remove data from TCP socket buffers, slower than TCP receiver is delivering
+
+encapsulates layer above
+UDP is treated independently by transport layer
+UDP packets are not related at all
+proc + queuing + transmission + propogation
+
+Estimated RTT = \alpha Sample RTT + (1 - \alpha) Estimate RTT
+CWND not given => 1
+
+d = 100ms + L/R = 100ms + 1000b/5000b/s = 300ms
+
+Artificial Potential Field:
+- Introduction
+- Attractive Force
+- Repulsive Force
+- Potential Field Controller
+
+attractive potential field:
+
+linear/quadratic function of distance
+
+repulsive force:
+
+Urep = 1/2 v (1/p(q, qobst) - 1/p_0)^2
+Voronoi Diagram
+
+ENGR 241, 8 Mar 2022
+
+Frames have at least one multiforce member
+Frames are stationary and support external loads
+Machines contain moving parts and alter the effects of forces
+
+looking at pin and pulling it apart to find forces
+
+Take an FBD for each part
+
+CPE 470, 10 Mar 2022
+
+
+
+
+
+
+virtual moving target, relative position, yelative heading,
+
+Qr0 = (xr0, yr0) = (x0 - xr, y0 - yr)
+
+p = atan(yrx, xrv), v_rd = sqrt(pv^2 + 2lamqrvpvcos(thetav - rho) + lambsa^2 qrv&2)
+Va = 1/2 \lambda ||qr0), lambda = small constant
+
+rho = relative headeing
+
+CS 456, 10 Mar 2022
+
+
+Three startegies:
+
+Two-force member, FBD, take the moment where the most unknowsn are
+
+CS 457, 10 Mar 2022
+
+Disk page, free frame, main memory
+Disk is a collections of blocks, 1 page corresponds to 1 disk block
+Stores data on disk by breaking into pages (size of disk block)
+Buffer manager caches these pages in memory
+Access methods grab data from these pages
+Organize data in pages, provide an API for operations, organize into DB Files
+
+UDP provides:
+no frills, bare bones
+best effort service, segments may be lost or delivered out of order
+connectionless: no handshaking, each segment handled independently
+
+why? no connection establishment, simple (no state), small segment header, no congestion control
+
+UDP: used for streaming multimedia apps (loss tolerant, rate sensitive)
+also used in DNS, SNMP, DHCP, NTP, control communication
+8 byte header
+checksum: detect errors in transmitted segment
+add togehter all 16-bit parts and then 1's complement
+
+NTP = network time protocol, time reliabiolity,
+application layer over UDP, adjust system clock to as close to UTC as possible,
+hierarchical server architecture
+
+IP Addressing:
+ipv4 vs ipv6
+Classful addressing, classless addressing (CIDR),
+DHCP, NAT
+
+Remove lambda productions
+
+S -> ABaC
+A -> BC
+B -> b | lambda
+C -> D | lamda
+D -> d
+
+S -> ABaC
+A -> BC
+B -> b
+C -> D
+D -> d
+
+Cannot do this
+
+S -> ABaC -> BCBaC -> bCbaC -> bCbaD -> bdbad
+
+Generate terminal w/o lambda transitions = cannot remove transition function
+
+S -> ABaC | AaC | ABa | Aa | BaC | aC | Ba | a
+
+NOTE: A can go to BC which can both go to Lambda
+
+Take power set of all lambda transitions and remove them from end set
+
+Step 3: remove unit productions
+
+Step 4: remove useless productions
+
+S -> A, A -> aA | B, B -> lambda (ok)
+S -> A, A -> aA (useless)
+
+look for loops
+
+CND Rule 1:
+
+X_a = a, X_b = b, replace all occurences after first one with X_whatever
+
+S -> A | AX_a | X_a C | B X_a | X_AB X_aC | A X_aC 
+
+X_AB = AB
+X_aC => X_a C
+
+rule 1: rmeove temporary empty string
+undo step 1 later
+
+S_0 = S | lambda
+S = a | A X_a | X_a C | B X_a | X_AB X_aC | A X_aC | X_AB X_a | B X_ac
+A = b | d | BC
+B = b
+C = d
+X_a = a
+X_AB = AB
+X_aC = X_a C
+
+G_{CFG/CNF} = ({S0, S, A, B, C, X_a, X_AB, X_aC}, {a,b,d}, S_o)
+
+When you're done, have only two variables on the right
+
+ENGR 241
+
+Cut in half to find internal forces, take a free body diagram, Nc (normal), bending moment (counterclockwise), Shear (Vc), loads are equal in magnitude but opposite in direction, apply EofE's
+
+0.0.0.0 is the lowest IP, used to define a host's own public IP for broadcasting
+255.255.255.255 is highest IP
+
+CIDR = classless interdomain routing
+subnet portion of address of arbitrary length
+address format: a.b.c.d/x, where x is # bits in subnet portion of address
+DHCP returns more than just allocated IP addresses
+
+Push-down automata = finite state
+NPDA vs PDA
+
+L = {a^n b^n: n >= 0} is a CFL
+NPDA = (Q, Z, J, Sigma, q0, Z, F)
+Q = finite set of internal states
+Z = finite set of symbols => input alpha
+J = finite set of symbols => stack alpha
+Sigma = finite set of transition functions
+q0 in Q => initial state
+Z in J => stack start symbol
+F in Q => finite set of final states
+
+J = Q x {Z union {\lambda}} x J -> Q x J*
+
+delta(q_i, a, b) = (q_j, c)
+
+current state, input symbol, top of stack + popped
+=> new state, push onto stack
+
+Context Free Grammar = A => a,
+Chomsky normal form = only two elements, one terminal element, or empty
+
+E.x.
+
+M = ({q0, q1, q2}, {a,b}, {c,d,$}, sigma, q0, $, {q2})
+
+(q_0, a, $) = (q_1, c$)
+
+Start: $...End: (stack bottom) $ | c (stack top)
+
+
+(q_0, b, $) = (q_1, cd$)
+
+Start: $...End: $dc
+
+(q_1, a, c) = (q_2, d)
+
+Start: $c...End: $d
+
+(q_1, a, c) = (q_2, \lambda)
+
+Start: $ddc...End: $dd
+
+(q_1, \lamda, c) = (q_2, cc)
+
+(don't consume a symbol from input), keep/duplicate symbol on stack
+
+create an NPDA for L = {a^n b^n: n >= 0}
+
+s = aabb, stack = $
+a = abb, stack = a$
+s = bb, stack = aa$,
+s = b, stack = a$
+s = lambda, stack = $
+
+(q_0, a, $) = (q_0, a$)
+(q_0, a, a) = (q_0, aa)
+(q_0, b, a) = (q_0, \lambda)
+(q_0, \lambda, $) = (q_f, \lambda)
+
+Solve for support reactions Ay and Cy,
+Solve for resultant force
+Cut the beam in the middle
+
+height is slope of the traignle line
+
+cut 1: 0 <= x <= 0,
+
+Fy = 9 kN - 1/3 x^2 - V = 0
+V = 9 - 1/3 x^2
+
+
+NAT = network address translation
+rest of internet <-> local network at 10.0.0/24
+
+local network uses just one IP as far as rest of world
+range of addrs not needed
+can change device addresses without any impact
+WAN vs LAN side addr and port
+NAT is controversial
+IPv6 adds new IP addresses, fixed 40 bytes header
+
+buffer manager = manage page loading/page writing
+
+Quiz 2:
+
+Logical Plan (relational algebra), Physical Plan, SQL
+
+Memorize A-B, Porjection, Selection, Cartesian Product
+Pipelined Execution
+Schema of natural join
+Buffer manager = pool
+Pros/cons of fixed/length and variable/length page formats
+Estimated number of pages for specific query
+IPv6 can be tunneled over IPv4
+Routing: graph G, N = routers, E = links
+Dijkastra's algorithm can be used
+
+computes least cost paths
+
+Distance Vector Routing Algorithm
+
+Decentralized
+
+let d_x(y) = cost of least-cost path from x to y,
+then
+d_x(y) = min {c(x,v) + d_v(y)}
+c(x,v) = cost from x to v
+Bellman-Ford algorithm
+
+from time to time, each node sneds its own distance vector to neighbors
+when x receives new dv estimate, it updates it
+
+
+iterative, async vs distributed
+local link cost change or DV upate from neighbor
+vs each node notified neightbors only when DV changes
+
+wait for change -> recompute estimates -> notify neighbors
+count to infinity problem
+poisoned reverse is the solution
+doesn't know that we're the bad link
+hierarchical routing - all routers identical, network "flat"
+routers aggregated into autonomous systems (AS)
+
+intra-AS routing vs inter-AS routing
+RIP = routing information protocol = distance vector algorithm
+
+
+
+
+
+consensus = agreement, average consensus
+multi-robot system or multi-sensor network, agree on estimation, distributed consensus
+neighborhood, q_i = position of node I,
+N_i(t) = {j in v: ||q_j - q_i|| < r, v = {1,2,...,n}, j != i}
+
+y_i = measurement of node i
+theta = ground "truth"
+y_i = A_i theta + v_i
+where y_i in R^m_i
+
+all vectors
+
+Q = E(blah blah blah)
+
+O_ml = (A^t \sum^-1)/(A^t \sum^-1 A) * y
+
+
+CFL closure properties:
+ union
+  concatentation
+  start-closure
+  regular interfection
+  
+CS 457
+  
+  Treat each group of instructions as a unit
+  
+Transaction = transaction = sequence of updates to the database with the property that either all complete or none completes
+
+Start, then commit or rollbaclk
+
+in ad-hoc, one statement = one transaction, autocommit
+
+
+ACID - atomicity, consistency, isolatio isn, durability
+abort/rollback
+
+concurrent and failure operations
+
+dirty read = not yet commited
+read-write conflict: unrepeatale read
+write-write conflict: lost update
+
+CPE 400
+
+AS1 must learn which dests are reachable through AS2, propogate this reachability info to all routers in AS1
+
+RIP = routing information protocool
+distance vector algorithm, subnet hops
+DVs exchanged with neighbors every 30 s, aka advertisement
+each advertisement = list of up to 25 dest subnets
+link failure: no ad after 180s, neighbor/link is dead
+routes via neighbor invalidated
+new ads sent to neighbors
+neighbors in turn send new ads
+link failure info quickly propogates to entire net
+posion reverse used to prevent ping-pong loops, infinite = 16 hops
+
+miscommunication or through a different route?
+if can't reach, A is closed to infinity to avoid miscommunication
+OSPF: open shortest path first
+open algorithm
+uses link state algorithm: Dijkstra's algorithm
+
+router floods OSPF link-state ads to all other routers in entire AS
+carried in OSPF messages over IP
+IS-IS routing: identical to OSPF
+multiple same-cost paths allowed (only one in RIP)
+for each link: multiple cost metrics for diff types of service (TOS)
+  satellite link cost low; high for real time
+  satellite = high bandwidth, low speed
+hierarchical OSPF -> backbone, subareas
+summarize subnets through one union subet
+
+two level hierarchy: local area, backbone (derail area topology)
+
+area border routers, bacbone routers, boundary routers
+BGP routing the de facro routing protocol for the internet
+BGP provides each AS a a means to obtain subnet reachability from neighboring AS, propogate reachability info, determine "good" routers to subnets
+
+
+
+For all S in L, S >= P, S = uvxyz where |vxy| <= P, |vy| >= 1, then s_i = uv^ixy^iz in L, all i >= 0
+
+Prove L = { a^n b^n c^n : n >= 0 } is not CFL
+Need a PDA
+pump it up or down, number of c's not equal to number of a's
+
+vy = a^k b^k, 1 <= k+j <= p
+
+two force members: only two places on the body, not subjected to couple moments,
+resultant forces at a and b and equal, opposite and collinear, passing through A and B
+
+
+statically determinant: fewer or equal unknowns than available, 3 in 2d, 6 in 3d
+redundant constraints = additional unknowns
+unstable = all supports poiunt to one point, or all supports are parallel
+internal forces: normal = perpendicular, shear = along surface, blennding moment
+
+Calculate GJx and GJy
+
+find height in terms of width
+Fr = 1/2 x 100 x
+shear force = sum of fY with V involved
+
+CPE 400, 6 Apr 2022 (out sick)
+
+when subnetting, you lose the network address (zeroes) and the broadcast address (ones)
+first host = all zeroes and a 1, last host = all ones and a zero
+
+CPE 470, 7 Apr 2022
+
+Consensus algorithm:
+
+x_i (t + 1) = W_ii (t) x_i (t) + \sum_{j in N_i(t)} W_ij(T) x_j(t), i = 1 .. n
+x_i(0) != x_j(0)
+x_i (0) = y_i = measurement
+
+Have object K in a sensor network, with sensors 1 and 2, sensors 3 may be too far to measure the object, through consensus, sensor 3 will also know this object, all connected in the sensor network
+
+N = set of neighbors
+sensor only communicates with its neighbors,
+W = weight
+
+eventually, this converges on the average value
+
+x1 = x2 = x3 = x4 = 1/n \sum_i = 1 ti n y_i
+
+non-connected measurement will be zero, influences the measurement
+you may be able to remove sensors from initial value
+
+x(t + 1) = W(t)x(t)
+W(t) = 0 for j not in neighbors
+Maximum degree weights:
+distributed equally
+W_ij(t) = 1/n if (i,j) in edges
+          1 - d_i(t)/n if i = j,
+          0 otherwise
+          
+Metropolis weights:
+W_ij(t) = 1/(1 + max{d_i(t), d_j(t)}) if (i, j) in edges
+          1 - \sum_{i,k in edges} W_{ik}(t) if i = j
+          0 otherwise
+          
+d_i = number of neighbors of i
+
+Vector of unknown parameters, theta, has dimension m = 5, each sensor takes a measurement
+d_A = 2,
+d_B = 10
+Each one takes a measurement of y_i = a^T_i theta + v_i
+Square is distributed in dimension of 1 by 1
+neighbors are chosen by distance of less than 0.25
+mean square error (MSE)
+
+max degree takes much longer than metropolis method in this case
+B has much more neighbors than A, so it takes a shorter time to converge on the result
+max-D: if D_i larger, then W_ii smaller
+trust self less, trust neighbor more
+
+more connected, very dense network = very fast convergence in metropolis
+Sum of neighbors makes it larger in the 2nd case for metropolis
+still works with dynamically changing graph
+
+Blind men trying to find consensus, each one with differnet measurment/estimate
+Scalar field: oil leak, chemicla leak,
+too large for static sensor network, mobile sensor network needed
+Need agreeement on measurement
+
+F = \theta * \phi^T, \theta = vector of earlier theta, phi = vector of phis, both up to K
+phi_j = 1/sqrt(det(C_j) * (2pi)^2) * e^(1/2 (x - mu_x^j blah blah blah
+
+m_i^k(t) = O_i^k(t)[F^k(t) + n_k^i(t)]
+
+here n_k^i(t) is Guassian noise
+O is observability at sensor node i at cell k (0 if out of cell, 1 if qi - qck is in r)
+qck = center location of cell k, qi is positon of sensor i
+cv = small constant
+
+V^k_i(t) = ||q_i(t) - qck||^2 + cv / r(si)^2 if in range, 0 otherwise
+
+
+CS 456 - 07 Apr 2022
+
+Prove something is true by including "all" elements in that set of things
+Sometimes, we need to split the set into two or more parts and then prove each part
+This is proof by cases
+e.g. split alphabet into vowels and consonants
+
+e.x. prove L = {a^n b^n c^n: n >= 0} is not CFL, needs a PDA, use a pumping lemma
+Assume L is CFL => exists s in L, |s| >= p,
+then s = uvxyz such that |vxy| <= p, |vy| >= 1,
+and s_i = uv^ixy^iz in L, i >= 0
+
+let s = a^p b^p c^p (len is 3p >= 1, all parts are equal, this is a good string)
+  vy:
+    case 1: only a's (not all the a's, could just be one a, but only a's)
+    case 2: only b's
+    case 3: only c's
+    case 4: a's and b's
+    case 5: b's and c's
+    (not) case 6: a's, b's, and c's (can't be a case, you would need to have one a, b^p, and c, and that would exceed the limit of p on vy)
+    
+  aaa...a bbb...b ccc...c (each with p)
+  | u  ||       z        |
+        ^ vxy
+        
+    or: v = c, x = p-2(c), y = (c), z = lambda
+    
+any part can be any part of the string, as long of |vy| <= p
+|vxy| <= p (wehn spanning)
+
+group into cases that take each of the above cases on
+
+case 1: a's or b's or a + b's
+
+vy = a^k b^k, 0 <= k <= p, 0 <= j <= p, 1 <= k + j <= p
+
+s = a^p-k a^k b^p-j b^k c^p
+si = a^p-k a^ki b^p-j b^ij c^p
+
+let i = 0
+
+s_0 = a^p-k b^p-j c^p
+
+k = 0, j >= 1, since p >= k_j >= 1
+
+p-j != p, or n_b(s_0) != n_c(s_0), therefore s_0 not in L
+
+else if j = 0, k >= 1 since 1 <= j + j <= p
+
+p-k != p, or n_a(s_0) != n_c(s_0)
+
+else if k, j >= 1
+
+p-k != p and p-j != p,
+n_a(s_0) != n_c(s_0) and n_b(s_0) != n_c(s_0)
+
+therefore s_0 not in L
+
+case 2- vy = [b^k c^j], [b's, c's, b's+c's]
+
+0 <= k <= p, 0 <= j <= p, 1 <= k+j <= p
+
+same thing as above happens, but with
+
+s_0 = a^p b^p-k c^p-j
+
+for all cases, s_0 not in L, therefore L is not a CFL
+
+prove L {n_a(w) > n_b(w) > n(c)(w) }
+
+Assume L is CFL, s in L, |s| >= p
+s = uvyxz, |vxy| <= p, |vy| >= 1, and
+s_i = uv^ixy^iz in L, i >= 0
+
+let s = a^p+2 b^p+1 c^p
+
+cases:
+  all a's
+  all b's
+  all c's
+  all a's and b's
+  all b's and c's
+  
+vy = a^k b^k
+
+n_a(w) >= n_b(w)
+
+
+0 <= k <= p
+0 <= j <= p
+1 <= k+j <= p
+
+s = a^p+2-k a^k b^p+1-j b^j c^p
+s_i = a^p+2-k a^ki b^p+1-j b^ji c^p
+
+CPE 470, 12 Apr 2022
+
+mik(t) = Oik(t) * [F^k(t) + nik(t)]
+nik = gaussian noise
+oik = observability
+noise variance is tied to distance from field ups
+
+weighted average consensus: each node makes the observation at cell k at time t based on its own confident (weight)
+
+xik(l + 1) = wiik(t) xik(t) + \sum_{j in N_i(t)} w_ijk(t) x_jk(t)
+xik(0) = mik(t)
+t = time window, l = iteration, l = 100
+
+x^k = |x1, x2 ..., xn|
+E^k(t) = sum of weighteted measurements divided by sum of weights
+
+wijk(t) = cw1/Vik(t) + Vjk(t), i != j
+        = 1 - sum of numbebors wijk(t)
+        = 0 if not in neighbors
+        
+ 0 < cw1 < Vik(t) + Vjk(t) / Ni(t)
+ 
+ 0 < cw1 < 2Cv/(rs)^2, min(V_ik) = Cv/(rsi)^2, if rsi = rsj
+smae deal, j = 0, contradicts
+
+5 cases vs something else,
+
+a^k, b^k, c^k, a^k b^k, b^k c^j
+
+pump up vs pump down?
+
+strategy 2:
+
+case 1: vy = a^k b^j, 0 <= k <= p, 0 <= j <= p, 1 <= k+j <= p
+case 2: vy = b^k c^j, ""
+
+s_i = a^p-k a^ki b^p+1-j bjc cp+2
+
+recursviely enumerable languages -> 
+
+turing machines may be acceptors
+
+(q_f, a, a, R, q_f)
+
+ENGR 241
+
+Slipping, F = nSN
+Tipping, x = b/s (normal force acts at edge)
+
+N_B, P, 20lb, NA, FA, tipping -> N_B = 0
+
+UNK: P, FA, NA
+
+F < uS N for tipping
+
+many physical plans for one query
+join operation is binary, i.e. N - 1
+bag semantics -> performance
+cartesian product is not performant
+
+CPE 400, 13 Apr 2022
+
+Subnets split a process into groups so we can manage them, as well as limit layer 2/3 broadcasts, better manage traffic
+servers can be protected from other servers
+zeroes are the network address
+ones are the broadcast address
+subnet mask: 255.255.255.0 or /24
+network -> subnet -> host
+cannot use last subnet, since it contains the broadcast address
+
+can only subnet the host portion
+no more hosts, divides networks into smaller networks
+you actually lose host addresses: the address and the broadcast address
+you may lose first and last subnets
+you can complete a query with the index files only
+
+by looking at the routing table, it decides which interface to send to
+broadcast links (shared wire/medium), ehternet, 802.11 wireless LAN
+point-2-point between switches and hosts
+collision = multiple senders send at once
+devices use the same medium => leads to collisions
+fdma = channel spectrum divided into frequency bands
+each station assigned fixed frequency band
+unused transmission time = go idle
+master node "invites" other nodes to transmit in turn

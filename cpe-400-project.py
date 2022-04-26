@@ -978,15 +978,20 @@ class Client:
         # as tasks to be processed by the pool
         threads = []
         for file in self.files.values():
-            threads.append(threading.Thread(target=self.send_file, args=(file,)))
+            th = threading.Thread(target=self.send_file, args=(file,))
+            th.start()
+            threads.append(th)
             self.active += 1
+
+            print(f"active threads: {self.active}")
 
             # limit concurrent processes
             while self.active >= self.num_concurrent:
                 time.sleep(0.1)
 
-        # we're done
-        logger.cancel()
+        # wait for all threads to finish
+        for th in threads:
+            th.join()
 
         # connection is now implicitly closed
 
