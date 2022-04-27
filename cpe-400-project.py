@@ -449,6 +449,7 @@ class BufferedSocket:
 
     def __init__(self, sock: socket.socket) -> None:
         self.sock = sock
+        self.sock.settimeout(1.0)
 
     def send_data(self, data: bytes) -> None:
         """
@@ -460,26 +461,32 @@ class BufferedSocket:
         buf = struct.pack('<I', len(data))
         self.sock.sendall(buf + data)
 
-    def __recvall(self, bufsize: int) -> bytes:
+    def __recvall(self, bufsize: int) -> Optional[bytes]:
         """
         Receive all data from the socket until it fills the buffer.
         """
 
         data = b''
         while len(data) < bufsize:
-            total = self.sock.recv(bufsize - len(data))
+            # 1 second timeout
+            try:
+                total = self.sock.recv(bufsize - len(data))
+            except socket.timeout:
+                return None
             if not total:
-                raise ConnectionResetError('Connection closed')
+                raise ConnectionError('Connection closed')
             data += total
         return data
 
-    def recv_data(self) -> bytes:
+    def recv_data(self) -> Optional[bytes]:
         """
         Receive data.
         """
 
         # receive the amount of data, in a u32 byte format
         buf = self.__recvall(4)
+        if buf is None:
+            return None
         if len(buf) == 0:
             raise ConnectionResetError('Connection closed')
         elif len(buf) != 4:
@@ -492,18 +499,20 @@ class BufferedSocket:
         buf = self.__recvall(size)
         return buf
 
-    def recv_json(self) -> Mapping[str, Any]:
+    def recv_json(self) -> Optional[Mapping[str, Any]]:
         """
         Receive a JSON object from the socket.
         """
 
         # receive the JSON object
         data = self.recv_data()
+        if data is None:
+            return None
 
         # return the JSON object
         return json.loads(data.decode('utf-8'))
 
-    def recv_wiretype(self, ty) -> WireRepr:
+    def recv_wiretype(self, ty) -> Optional[WireRepr]:
         """
         Receive a wire-encoded object from the buffer.
         """
@@ -511,6 +520,8 @@ class BufferedSocket:
 #        print(f"receiving: {ty}")
 
         map = self.recv_json()
+        if not map:
+            return None
         return ty.from_wire(map)
     
     def send_wiretype(self, obj: WireRepr) -> None:
@@ -522,12 +533,14 @@ class BufferedSocket:
         by = obj.to_wire()
         self.send_data(json.dumps(by).encode('utf-8'))
 
-    def recv_many_wiretype(self, *args) -> Any:
+    def recv_many_wiretype(self, *args) -> Optional[Any]:
         """
         Receive one of many wire-encoded types.
         """
 
         map = self.recv_json()
+        if not map:
+            return None
 
 #        print(f"receiving one of: {args}")
 
@@ -602,6 +615,7 @@ class FilePacketSender:
     file_reader: BinaryIO
     host: Optional[str]
     port: Optional[int]
+    corrupt: bool
 
     def __init__(
         self, 
@@ -616,6 +630,7 @@ class FilePacketSender:
         self.file_reader = file_reader
         self.host = host
         self.port = port
+        self.corrupt = False
 
     def send(self, sequences: Optional[Container[int]]) -> int:
         """
@@ -639,6 +654,10 @@ class FilePacketSender:
             # check the sequence number
             if sequences is not None and packet.header.seq_num not in sequences:
                 continue
+
+            # if we need to, corrupt the packet
+            if self.corrupt:
+                packet.data[5] = packet.data[5] ^ 0xFF
 
             # send the packet
             self.sequences.append(packet.header.seq_num)
@@ -874,6 +893,7 @@ class Client:
         # start up a TCP socket connected to the given hostname and port
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((self.hostname, port))
+        sock.settimeout(1.0)
         self.sock = BufferedSocket(sock)
 
     def begin_handshake(self) -> None:
@@ -909,7 +929,12 @@ class Client:
                 self.current_ports[file.filename] = port 
                 return port
 
-    def send_file(self, file: FileInfo) -> None:
+    def send_file(
+        self,
+        file: FileInfo,
+        init_sequences: Optional[Sequence[int]] = None,
+        corrupt_packet: bool = False,
+    ) -> None:
         """
         Send a single file across the wire.
         """
@@ -930,13 +955,18 @@ class Client:
                 del self.responses[file.filename]
                 break
 
-        sequences = None
+        sequences = init_sequences
 
         # open a UDP socket to send files over
         while True:
             file_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             f = open(file.filename, "rb")
             sender = FilePacketSender(file_sock, f, self.hostname, current_port)
+
+            # corrupt packet if possible
+            sender.corrupt = corrupt_packet
+            corrupt_packet = False
+
             last_seq = sender.send(sequences)
             f.close()
             file_sock.close()
@@ -976,9 +1006,11 @@ class Client:
             except ValueError:
                 # main thread is trying to wake us up
                 break
+            except ConnectionError:
+                break
 
             if response is None:
-                break
+                continue
 
             # add the response to the map
             self.responses[response.filename] = response
@@ -1017,7 +1049,6 @@ class Client:
 
         # wake up the logger thread
         self.running = False
-        self.sock.send_wiretype(NoOp())
         logger.join()
 
         # connection is now implicitly closed
@@ -1117,6 +1148,8 @@ class Server:
             except ValueError:
                 # main thread is probably trying to wake us up
                 continue
+            except ConnectionError:
+                break
 
             # add the request to the appropriate list
             if isinstance(request, SendFileRequest):
@@ -1125,7 +1158,7 @@ class Server:
                 self.finished_file_requests[request.filename] = request
             else:
                 # invalid; main thread is waking us up
-                break
+                continue
 
     def recv_file(self, sfe: SendFileRequest) -> None:
 #        print("recv file was run")
@@ -1174,6 +1207,7 @@ class Server:
 #                    print(data)
                     checksum = get_checksum(data)
                     if checksum != fileinfo.checksum:
+                        print("file was corrupted")
                         # ask to resend all packets
                         self.sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
                         continue
@@ -1197,6 +1231,7 @@ class Server:
 
         # wait for a SendFileRequest
         thread_list = []
+        print(f"file count is {self.file_count}")
         while self.file_count > 0:
             # wait for the send file request
             while True:
@@ -1218,7 +1253,7 @@ class Server:
 
         # done; set running to false and wake up the logger thread
         self.running = False
-        self.sock.send_wiretype(NoOp())
+        #self.sock.close() 
         logger.join()
 
     def run(self):
@@ -1261,6 +1296,7 @@ def test_single_file() -> None:
                 # run the client
 #                print(client.files)
                 client.send_file(next(iter(client.files.values())))
+                client.running = False
 
             def run_server(server: Server, path: Path) -> None:
                 try:
@@ -1284,11 +1320,14 @@ def test_single_file() -> None:
             f3.start()
             f1.join()
             f2.join()
+            f3.join()
 
             # make sure files are equal
             with open(os.path.join(recv_dir, "test.bin"), "rb") as f:
                 if f.read() != data:
                     raise Exception("Files are not equal")
+
+            sys.exit(0)
 
 def main() -> None:
     mode = sys.argv[1]
@@ -1298,6 +1337,7 @@ def main() -> None:
     elif mode == "server":
         server = Server(Path(sys.argv[2]))
         server.run()
+        server.listener.close()
     elif mode == "test":
         test_buffered_socket()
         test_file_packet()
