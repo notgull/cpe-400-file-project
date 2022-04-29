@@ -1,4 +1,4 @@
-# John Nunley
+# John Nunley, Bill Tong, Parker
 # CPE 400
 # Course Project
 # Arslan
@@ -35,7 +35,10 @@ General Guide to this file:
 """
 
 from abc import ABC, abstractmethod, abstractclassmethod
+from doctest import BLANKLINE_MARKER
+from io import open_code
 from pathlib import Path
+import shutil
 import time
 from typing import Any, BinaryIO, Callable, Container, Iterable, Mapping, Optional, Sequence, Tuple, TypeVar, Union
 
@@ -50,6 +53,8 @@ import struct
 import sys
 import tempfile
 import threading
+
+from numpy import diff
 
 # constants
 
@@ -616,6 +621,7 @@ class FilePacketSender:
     host: Optional[str]
     port: Optional[int]
     corrupt: bool
+    skip_second_one: bool
 
     def __init__(
         self, 
@@ -630,7 +636,9 @@ class FilePacketSender:
         self.file_reader = file_reader
         self.host = host
         self.port = port
+
         self.corrupt = False
+        self.skip_second_one = False
 
     def send(self, sequences: Optional[Container[int]]) -> int:
         """
@@ -657,11 +665,15 @@ class FilePacketSender:
 
             # if we need to, corrupt the packet
             if self.corrupt:
-                packet.data[5] = packet.data[5] ^ 0xFF
+                # invert all of the bytes
+                packet.data = bytes(
+                    (b ^ 0xff) for b in packet.data
+                )
 
             # send the packet
             self.sequences.append(packet.header.seq_num)
-            #print(f"sending:\n{packet}")
+            if self.skip_second_one and packet.header.seq_num == 1:
+                continue
             self.send_packet(packet)
 
         # send a zero-size packet at the very end
@@ -721,10 +733,12 @@ class FilePacketSender:
         self.file_reader.close()
         self.sock.close()
 
-class FilePacketReader:
+class FilePacketReader(ABC):
     """
     A wrapper around a UDP socket that reads in packets and writes them
     to a file.
+
+    This will either write or append to the stream.
     """
 
     sock: socket.socket
@@ -746,27 +760,30 @@ class FilePacketReader:
         # parse the packet
         packet = FilePacket.from_bytes(data)
 
-#        print(f"recv packet:\n{packet}")
-
         # if the packet's size is 0, we're done
         if packet.header.size == 0:
             return None
 
-        # write the packet to the file
-        self.file_writer.write(packet.data)
-
         return packet
 
+    @abstractmethod
     def write_packet(self, packet: FilePacket) -> None:
         """
         Write a file packet that we received.
         """
 
-        # move the file writer to the right position
-        self.file_writer.seek(packet.header.seq_num * BLOCK_SIZE)
+        pass
 
-        # write the packet to the file
-        self.file_writer.write(packet.data)
+    @abstractmethod
+    def get_going(self) -> None:
+        """
+        Push any other pending data to the output
+        """
+
+        pass
+
+    def close(self) -> None:
+        self.file_writer.close()
 
     def read(self) -> Iterable[int]:
         """
@@ -784,39 +801,151 @@ class FilePacketReader:
                 return
 
             # yield the sequence number
-            yield packet.header.seq_num
+            seqnum = packet.header.seq_num
+#            print(f"read packet {seqnum}")
+            yield seqnum 
 
             # write the packet to the file
             self.write_packet(packet)
+
+class WriteFilePacketReader(FilePacketReader):
+    """
+    Takes a new file and writes into it.
+    """
+
+    def __init__(self, sock: socket.socket, file_writer: BinaryIO) -> None:
+        self.sock = sock
+        self.file_writer = file_writer
+
+    def write_packet(self, packet: FilePacket) -> None:
+        # move the file writer to the right position
+        self.file_writer.seek(packet.header.seq_num * BLOCK_SIZE)
+
+        # write the packet to the file
+        self.file_writer.write(packet.data)
+
+    def get_going(self) -> None:
+        pass
+
+class SpliceFilePacketReader(FilePacketReader):
+    """
+    Takes an existing file path and splices a set number
+    of packets into it.
+    """
+
+    file_reader: BinaryIO
+    sequences: Sequence[int]
+    last_seqnum: int
+    final_seqnum: int
+    tpath: str
+
+    def __init__(
+        self,
+        sock: socket.socket,
+        fpath: str,
+        sequences: Sequence[int],
+        final_seqnum: int
+    ) -> None:
+        # copy the old file to the file plus .tmp
+        # and then open the new file to write
+        tpath = fpath + ".tmp"
+        shutil.copyfile(fpath, tpath)
+        file_writer = open(fpath, "wb")
+        self.file_reader = open(tpath, "rb")
+
+        super().__init__(
+            sock,
+            file_writer
+        )
+
+        self.sequences = sequences
+        self.last_seqnum = -1
+        self.final_seqnum = final_seqnum
+        self.tpath = tpath
+
+    def __copy_packets(self, up_to: int) -> None:
+        for seqnum in range(self.last_seqnum + 1, up_to + 1):
+            self.file_reader.seek(seqnum * BLOCK_SIZE)
+            data = self.file_reader.read(BLOCK_SIZE)
+            self.file_writer.seek(seqnum * BLOCK_SIZE)
+            self.file_writer.write(data)
+
+    def write_packet(self, packet: FilePacket) -> None:
+        self.__copy_packets(packet.header.seq_num - 1)
+
+        # move the file writer to the right position
+        self.file_writer.seek(packet.header.seq_num * BLOCK_SIZE)
+        if packet.header.seq_num in self.sequences:
+            data = packet.data
+        else:
+            self.file_reader.seek(packet.header.seq_num * BLOCK_SIZE)
+            data = self.file_reader.read(BLOCK_SIZE)
+
+        # write the packet to the file
+        self.file_writer.write(data)
+        self.last_seqnum = max(self.last_seqnum, packet.header.seq_num)
+
+    def get_going(self) -> None:
+        self.__copy_packets(self.final_seqnum)
+
+        # remove the file
+        os.unlink(self.tpath)
+        
 
 def test_file_packet():
     # create a pair of sockets
     sock1, sock2 = socket.socketpair()
 
     # create a temporary file with dummy data
-    with tempfile.NamedTemporaryFile() as f:
+    with tempfile.TemporaryDirectory() as tmp_dir:
         # write some data to the file
-        f.write(b'Hello, world!')
-        f.seek(0)
+        path1 = os.path.join(tmp_dir, "tmp1.bin")
+        path2 = os.path.join(tmp_dir, "tmp2.bin")
+        data = os.urandom(BLOCK_SIZE * 4)
+        with open(path1, "wb") as f:
+            f.write(data)
 
         # wrap the sockets in FilePacketSender and FilePacketReader
-        sender = FilePacketSender(sock1, f, None, None)
-        with tempfile.NamedTemporaryFile() as f2:
-            reader = FilePacketReader(sock2, f2)
+        with open(path1, "rb") as f:
+            sender = FilePacketSender(sock1, f, None, None)
+            with open(path2, "wb") as f2:
+                reader = WriteFilePacketReader(sock2, f2)
+
+                # send the file across the sockets
+                sender.send(None)
+                for seq in reader.read():
+                    pass
+                reader.get_going()
+                reader.close()
+
+        # check if file is equal
+        with open(path2, "rb") as f2:
+            data2 = f2.read()
+            assert data == data2
+
+        # we also need to check replacement mode
+        # see if it works with just the data
+        with open(path1, "rb") as f:
+            sender = FilePacketSender(sock1, f, None, None)
+
+            reader = SpliceFilePacketReader(
+                sock2,
+                path2,
+                [1,2],
+                3
+            )
 
             # send the file across the sockets
-            sender.send(None)
+            sender.send([1,2])
             for seq in reader.read():
                 pass
+            reader.get_going()
+            reader.close()
 
-            f.seek(0)
-            f2.seek(0)
-
-            # check that the file is correct
-            l = f.read()
-            r = f2.read()
-            #print(l)
-            assert l == r
+        # check if file is equal
+        with open(path2, "rb") as f2:
+            data2 = f2.read()
+            assert data == data2
 
     print("file senders work")
 
@@ -932,8 +1061,8 @@ class Client:
     def send_file(
         self,
         file: FileInfo,
-        init_sequences: Optional[Sequence[int]] = None,
-        corrupt_packet: bool = False,
+        init_sequences: bool, 
+        corrupt_packet: bool,
     ) -> None:
         """
         Send a single file across the wire.
@@ -955,7 +1084,7 @@ class Client:
                 del self.responses[file.filename]
                 break
 
-        sequences = init_sequences
+        sequences = None
 
         # open a UDP socket to send files over
         while True:
@@ -963,9 +1092,15 @@ class Client:
             f = open(file.filename, "rb")
             sender = FilePacketSender(file_sock, f, self.hostname, current_port)
 
-            # corrupt packet if possible
-            sender.corrupt = corrupt_packet
-            corrupt_packet = False
+            # corrupt packet if we want to 
+            if corrupt_packet:
+                print("Intentionally corrupting packet...")
+                sender.corrupt = True
+                corrupt_packet = False
+            if init_sequences:
+                print("Intentionally skipping a sequence number...")
+                sender.skip_second_one = True
+                init_sequences = False
 
             last_seq = sender.send(sequences)
             f.close()
@@ -1015,13 +1150,10 @@ class Client:
             # add the response to the map
             self.responses[response.filename] = response
 
-    def run(self):
-        # create the socket
-        self.open_socket()
-
-        # send the Open request to indicate that we're open for business
-        self.begin_handshake()
-        self.read_handshake()
+    def send_files(self, test: bool) -> None:
+        """
+        Send all of the files that we need to.
+        """
 
         # create a thread that just sits on the socket and logs its responses
         # into the responses map
@@ -1033,8 +1165,20 @@ class Client:
         # submits individual elements of the iterable "self.files.values()" 
         # as tasks to be processed by the pool
         threads = []
-        for file in self.files.values():
-            th = threading.Thread(target=self.send_file, args=(file,))
+        for i, file in enumerate(self.files.values()):
+            # intentionally corrupt for testing purposes
+            if test:
+                miss_sequence = i == 0
+                corrupt = i == 1
+            else:
+                miss_sequence = False
+                corrupt = False
+
+            # start file thread and append to list
+            th = threading.Thread(
+                target=self.send_file, 
+                args=(file,miss_sequence,corrupt)
+            )
             th.start()
             threads.append(th)
             self.active += 1
@@ -1050,6 +1194,16 @@ class Client:
         # wake up the logger thread
         self.running = False
         logger.join()
+
+    def run(self, test: bool):
+        # create the socket
+        self.open_socket()
+
+        # send the Open request to indicate that we're open for business
+        self.begin_handshake()
+        self.read_handshake()
+
+        self.send_files(test)
 
         # connection is now implicitly closed
 
@@ -1104,7 +1258,13 @@ class Server:
 
         # open a listener on the default port
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.bind(('0.0.0.0', unwrap_or(find_argument("--port"), DEFAULT_PORT)))
+        while True:
+            try:
+                listener.bind(('0.0.0.0', unwrap_or(find_argument("--port"), DEFAULT_PORT)))
+                break
+            except OSError as e:
+                print(e)
+                continue
         listener.listen(1)
         self.listener = listener
 
@@ -1165,6 +1325,9 @@ class Server:
         filename = sfe.filename
         filesize = sfe.size
         port = sfe.port
+        total_packets = filesize // BLOCK_SIZE + (filesize % BLOCK_SIZE > 0)
+
+#        print(f"reading file {filename}")
 
         # this indicates the size of the file, as well as the server port
         # it's being sent over
@@ -1176,17 +1339,28 @@ class Server:
         # we are ready 
         self.sock.send_wiretype(ReadyForFileReply(fileinfo.filename))
 
+        diff_packets = None
+
         while True:
             # begin receiving files over the designated port
             # open a UDP listening socket
             path = os.path.join(self.file_root, os.path.basename(fileinfo.filename))
-            f = open(path, "wb")
-            #print("beginning file read")
-            receiver = FilePacketReader(file_sock, f)
+
+            if diff_packets is None:
+                f = open(path, "wb")
+                receiver = WriteFilePacketReader(file_sock, f)
+            else:
+                receiver = SpliceFilePacketReader(
+                    file_sock,
+                    path,
+                    diff_packets,
+                    total_packets,
+                )
+
             # received the file
             received_sequences = list(receiver.read())
-            receiver.sock.close()
-            f.close()
+            receiver.get_going()
+            receiver.close()
 
             # wait for the FinishedFileRequest
             while True:
@@ -1199,6 +1373,8 @@ class Server:
             # if we've received every sequence number up to the one indicated
             # in the request, we're done
             full_packets = finished_file_request.sequences
+            #print(f"expected sequences {full_packets}")
+            #print(f"received sequences {received_sequences}")
             if received_sequences == full_packets:
                 print(f"recv file in full: {filename}")
                 # make sure that the file matches the checksum
@@ -1209,11 +1385,15 @@ class Server:
                     if checksum != fileinfo.checksum:
                         print("file was corrupted")
                         # ask to resend all packets
-                        self.sock.send_wiretype(ResendPacketsReply(fileinfo.filename, full_packets))
+                        # round up division 
+                        req_packets = list(range(total_packets))
+                        self.sock.send_wiretype(ResendPacketsReply(fileinfo.filename, req_packets))
+                        diff_packets = None
                         continue
 
                 # remove the filename from self.files
                 del self.files[filename]
+                file_sock.close()
                 self.sock.send_wiretype(
                     SendFileReply(filename)
                 )
@@ -1224,6 +1404,7 @@ class Server:
                 diff_packets = list(set(full_packets) - set(received_sequences))
                 print(f"missed packets: {diff_packets}")
                 self.sock.send_wiretype(ResendPacketsReply(filename, diff_packets))
+                mode = "ab"
 
     def recv_files(self) -> None:
         logger = threading.Thread(target=self.log_requests)
@@ -1266,22 +1447,30 @@ class Server:
         # connection is now implicitly closed
 
 # test single file
-def test_single_file() -> None:
+def test_single_file(complex: bool) -> None:
+    if complex:
+        count = 3
+    else:
+        count = 1
+    
     # create two temporary directories to store the temp
     # file in
     with tempfile.TemporaryDirectory() as send_dir:
         with tempfile.TemporaryDirectory() as recv_dir:
             # fill a binary file with random info
-            path = os.path.join(send_dir, "test.bin")
-            data = os.urandom(1024)
-            with open(path, "wb") as f:
-                f.write(data)
+            paths = [f"test{f}.bin" for f in range(count)]
+            datas = [os.urandom(BLOCK_SIZE * 4) for _ in paths]
+            for i, path in enumerate(paths):
+                data = datas[i]
+                p = os.path.join(send_dir, path)
+                with open(p, "wb") as f:
+                    f.write(data)
 
             # open a client and server
             client = Client(send_dir, "localhost")
             server = Server(recv_dir)
 
-            # go through the handshake
+            # go through the handshake if only one file
             server.begin_listening()
             client.open_socket()
             server.accept_client()
@@ -1294,21 +1483,31 @@ def test_single_file() -> None:
 
             def run_client(client: Client) -> None:
                 # run the client
-#                print(client.files)
-                client.send_file(next(iter(client.files.values())))
-                client.running = False
+                if not complex:
+                    client.send_file(
+                        FileInfo(
+                            os.path.join(send_dir, paths[0]),
+                            get_checksum(data)
+                        ),
+                        False,
+                        False,
+                    )
+                    client.running = False
+                else:
+                    client.send_files(True)
 
             def run_server(server: Server, path: Path) -> None:
                 try:
                     server.recv_files()
                 finally:
+                    server.sock.close()
                     server.listener.close()
 
             def log_drop_err(client: Client) -> None:
                 try:
                     client.log_responses()
-                except:
-                    pass
+                except Exception as e:
+                    print(e)
 
             # open a thread for the client and
             # another for the server
@@ -1323,9 +1522,12 @@ def test_single_file() -> None:
             f3.join()
 
             # make sure files are equal
-            with open(os.path.join(recv_dir, "test.bin"), "rb") as f:
-                if f.read() != data:
-                    raise Exception("Files are not equal")
+            for i, path in enumerate(paths):
+                data = datas[i]
+                with open(os.path.join(recv_dir, path), "rb") as f:
+                    fdata = f.read()
+                    if fdata != data:
+                        raise Exception(f"Files are not equal: {path}")
 
             sys.exit(0)
 
@@ -1333,7 +1535,7 @@ def main() -> None:
     mode = sys.argv[1]
     if mode == "client":
         client = Client(sys.argv[2], sys.argv[3])
-        client.run()
+        client.run(False)
     elif mode == "server":
         server = Server(Path(sys.argv[2]))
         server.run()
@@ -1341,9 +1543,10 @@ def main() -> None:
     elif mode == "test":
         test_buffered_socket()
         test_file_packet()
-        test_single_file()
-        #test = Test(Client(), Server())
-        #test.run()
+        test_single_file(False)
+    elif mode == "ctest":
+        client = Client(sys.argv[2], sys.argv[3])
+        client.run(True)
     else:
         print("Invalid mode: {}".format(mode))
         sys.exit(1)
