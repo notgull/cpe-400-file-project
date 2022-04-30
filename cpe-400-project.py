@@ -1,4 +1,4 @@
-# John Nunley, Bill Tong, Parker
+# John Nunley, Bill Tong, Parker Nelms
 # CPE 400
 # Course Project
 # Arslan
