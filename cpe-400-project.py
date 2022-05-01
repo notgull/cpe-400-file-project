@@ -34,9 +34,9 @@ General Guide to this file:
 - The BufferedSocket is used to send/read WireRepr types.
 """
 
+# import section
+
 from abc import ABC, abstractmethod, abstractclassmethod
-from doctest import BLANKLINE_MARKER
-from io import open_code
 from pathlib import Path
 import shutil
 import time
@@ -58,11 +58,19 @@ from numpy import diff
 
 # constants
 
+# the size of the blocks used in file packets
+#
+# equivalent to 16 KiB
 BLOCK_SIZE = 2**14
-COUNT_AT_A_TIME = 2**10
+# the default value for num_concurrency if the user doesn't specify it
 DEFAULT_CONCURRENCY = 1
+# the default port used for the TCP connection
 DEFAULT_PORT = 27850
+# the starting port for sending files
+# 
+# ports from this to this plus num concurrency will b
 DEFAULT_FILE_PORT = 27851
+# timeout for the TCP connection
 TIMEOUT = 30
 
 general_flow = """
@@ -86,6 +94,8 @@ def find_argument(arg: str) -> Optional[str]:
     Gets the value of an argument from the command line.
     """
 
+    # iterate over sys.argv, look for the argument, and get the argument
+    # after it
     for i in range(1, len(sys.argv)):
         if sys.argv[i] == arg:
             if i + 1 < len(sys.argv):
@@ -130,6 +140,10 @@ class WireRepr(ABC):
         pass
 
 class NoOp(WireRepr):
+    """
+    A quick no-op wire representation object for testing.
+    """
+
     def to_wire(self) -> Mapping[str, Any]:
         return {
             'type': 'no_op'
@@ -163,6 +177,8 @@ class OpenRequest(WireRepr):
 
     def to_wire(self) -> Mapping[str, Any]:
         checksums = {}
+
+        # hex strings are easier to send in JSON form
         for filename, checksum in self.checksums.items():
             checksums[filename] = checksum.hex()
 
@@ -387,15 +403,21 @@ class FilePacketHeader:
         self.size = size
 
     def to_bytes(self) -> bytes:
-       return struct.pack('<II', self.seq_num, self.size)
+        # pack it into two big-endian 32 bit numbers
+        return struct.pack('<II', self.seq_num, self.size)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> 'FilePacketHeader':
+        # unpack using two numbers
         seq_num, size = struct.unpack('<II', data)
         return cls(seq_num, size)
 
     @classmethod
     def size(cls) -> int:
+        """
+        Get the amount of space needed for a FilePacketHeader.
+        """
+
         return struct.calcsize('<II')
 
     def __repr__(self) -> str:
@@ -406,7 +428,10 @@ class FilePacketHeader:
 
 class FilePacket:
     """
-    The total file packet. 
+    The total file packet. COntains a slice of the file, and the
+    header as mentioned above.
+
+    These are the objects sent over the UDP socket.
     """
 
     header: FilePacketHeader
@@ -448,12 +473,17 @@ WireType = TypeVar("WireType")
 class BufferedSocket:
     """
     A wrapper around a (TCP?) socket with an attached read buffer.
+
+    This adds a layer of abstraction over the socket, so that we can
+    send and receive WireRepr types over the socket.
     """
 
     sock: socket.socket
 
     def __init__(self, sock: socket.socket) -> None:
         self.sock = sock
+
+        # this way, we never hang before a file transfer ends
         self.sock.settimeout(1.0)
 
     def send_data(self, data: bytes) -> None:
@@ -527,6 +557,8 @@ class BufferedSocket:
         map = self.recv_json()
         if not map:
             return None
+
+        # use WireRepr to convert the map to the right type
         return ty.from_wire(map)
     
     def send_wiretype(self, obj: WireRepr) -> None:
@@ -541,6 +573,9 @@ class BufferedSocket:
     def recv_many_wiretype(self, *args) -> Optional[Any]:
         """
         Receive one of many wire-encoded types.
+
+        This tries to receive one of the types in args, and returns
+        the first one that succeeds.
         """
 
         map = self.recv_json()
@@ -565,6 +600,10 @@ class BufferedSocket:
         self.sock.close()
 
 def test_buffered_socket():
+    """
+    Sanity test for the buffered socket.
+    """
+
     # create a pair of sockets
     sock1, sock2 = socket.socketpair()
 
@@ -783,6 +822,10 @@ class FilePacketReader(ABC):
         pass
 
     def close(self) -> None:
+        """
+        Close the file writer.
+        """
+
         self.file_writer.close()
 
     def read(self) -> Iterable[int]:
@@ -811,6 +854,8 @@ class FilePacketReader(ABC):
 class WriteFilePacketReader(FilePacketReader):
     """
     Takes a new file and writes into it.
+
+    Used for receiving the initial file and re-receiving the entire thing after a checksum error.
     """
 
     def __init__(self, sock: socket.socket, file_writer: BinaryIO) -> None:
@@ -831,6 +876,8 @@ class SpliceFilePacketReader(FilePacketReader):
     """
     Takes an existing file path and splices a set number
     of packets into it.
+
+    Used for receiving individual packets.
     """
 
     file_reader: BinaryIO
@@ -864,6 +911,11 @@ class SpliceFilePacketReader(FilePacketReader):
         self.tpath = tpath
 
     def __copy_packets(self, up_to: int) -> None:
+        """
+        Copy all of the unsent packet up to the "up_to" parameter
+        into the new file.
+        """
+
         for seqnum in range(self.last_seqnum + 1, up_to + 1):
             self.file_reader.seek(seqnum * BLOCK_SIZE)
             data = self.file_reader.read(BLOCK_SIZE)
@@ -871,6 +923,7 @@ class SpliceFilePacketReader(FilePacketReader):
             self.file_writer.write(data)
 
     def write_packet(self, packet: FilePacket) -> None:
+        # catch up on all of the packets we haven't seen yet
         self.__copy_packets(packet.header.seq_num - 1)
 
         # move the file writer to the right position
@@ -886,6 +939,11 @@ class SpliceFilePacketReader(FilePacketReader):
         self.last_seqnum = max(self.last_seqnum, packet.header.seq_num)
 
     def get_going(self) -> None:
+        """
+        Write all of the packets we haven't written yet.
+        """
+
+        # write all of the packets we haven't written yet
         self.__copy_packets(self.final_seqnum)
 
         # remove the file
@@ -893,6 +951,10 @@ class SpliceFilePacketReader(FilePacketReader):
         
 
 def test_file_packet():
+    """
+    Sanity test for the file packet system
+    """
+
     # create a pair of sockets
     sock1, sock2 = socket.socketpair()
 
@@ -913,6 +975,8 @@ def test_file_packet():
 
                 # send the file across the sockets
                 sender.send(None)
+
+                # expend all of the packets
                 for seq in reader.read():
                     pass
                 reader.get_going()
@@ -951,6 +1015,10 @@ def test_file_packet():
 
 # checksum
 def get_checksum(data: bytes) -> bytes:
+    """
+    Get the SHA256 checksum for a series of bytes.
+    """
+
     return hashlib.sha256(data).digest()
 
 # client operations
@@ -1051,6 +1119,11 @@ class Client:
         self.ports = open_reply.ports
 
     def choose_port(self, file: FileInfo) -> int:
+        """
+        Choose the port we're sending our file over.
+        """
+
+        # iterate until we find one that isn't in use
         while True:
             for port in self.ports:
                 if port in self.current_ports.values():
@@ -1532,6 +1605,10 @@ def test_single_file(complex: bool) -> None:
             sys.exit(0)
 
 def main() -> None:
+    """
+    Program entry point
+    """
+
     mode = sys.argv[1]
     if mode == "client":
         client = Client(sys.argv[2], sys.argv[3])
